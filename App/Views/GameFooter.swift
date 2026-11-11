@@ -43,8 +43,8 @@ struct GameFooter: View {
             rosetta: model.rosetta)
     }
 
-    /// The launcher's page is three pieces: the logo area over the art, the events card and the action card.
-    enum Part { case highlights, events, actions }
+    /// The hero has two pieces: the logo area over the art and the action bar.
+    enum Part { case highlights, actions }
     let part: Part
 
     var body: some View {
@@ -56,8 +56,6 @@ struct GameFooter: View {
                     HighlightsButton(highlights: highlights, images: images)
                 }
             }
-        case .events:
-            EventsPanel(events: model.gameEvents[game.id] ?? [])
         case .actions:
             actions
         }
