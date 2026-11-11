@@ -62,7 +62,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: App/Info.plist
         # Sparkle Ed25519 public key. The private key is the SPARKLE_ED_PRIVATE_KEY secret.
-        SPARKLE_PUBLIC_ED_KEY: "twDFIWAvlw1lBPC12GhgVqHMvPTpgYCUstqhuVJ/vPg="
+        SPARKLE_PUBLIC_ED_KEY: "jG8tYhqA775oO1rKILanOBEs/YdQMcvr8Kx6VN4euyo="
         INFOPLIST_KEY_CFBundleDisplayName: MacGacha4Life
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 silent9669. Based on MacGacha by deruta74. GPL-3.0."
         MARKETING_VERSION: 0.4.0

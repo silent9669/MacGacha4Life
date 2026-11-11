@@ -4,53 +4,47 @@ import AppKit
 import HoYoPlayAPI
 import SwiftUI
 
-/// HoYoPlay's events for the game, bottom left: each title with its date, opening the post in the browser.
-struct EventsPanel: View {
+/// HoYoPlay's events for the game: each title with its date, opening the post in the browser.
+struct EventsList: View {
     let events: [GameEvent]
     /// HoYoPlay shows a short list; the rest are a click away on the game's site.
     private static let visible = 3
 
     var body: some View {
-        if !events.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Events")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .accessibilityAddTraits(.isHeader)
-                // Posts have no stable id, and titles can repeat, so rows are keyed by position.
-                ForEach(Array(events.prefix(Self.visible).enumerated()), id: \.offset) { _, event in
-                    EventRow(event: event)
-                }
+        // Posts have no stable id, and titles can repeat, so rows are keyed by position.
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(events.prefix(Self.visible).enumerated()), id: \.offset) { _, event in
+                EventRow(event: event)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(6)
-            .glassCard(radius: 22)
         }
     }
 }
 
-private struct EventRow: View {
+struct EventRow: View {
     let event: GameEvent
+    var icon: URL?
     @State private var hovered = false
 
     var body: some View {
         let row = HStack(spacing: 12) {
+            if let icon {
+                LocalImage(url: icon)
+                    .frame(width: 22, height: 22)
+                    .clipShape(.rect(cornerRadius: 5, style: .continuous))
+                    .accessibilityHidden(true)
+            }
             Text(event.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(verbatim: event.date)
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(.secondary)
         }
         .font(.callout)
-        .foregroundStyle(.white)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(.white.opacity(hovered ? 0.12 : 0), in: .rect(cornerRadius: 8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.primary.opacity(hovered ? 0.08 : 0), in: .rect(cornerRadius: 8))
         .contentShape(.rect)
         .help(event.title)
 

@@ -35,44 +35,25 @@ struct LocalImage: View {
 
 // MARK: - Sidebar
 
-/// What the sidebar selects: a game, or one of the app's own pages.
-private enum Destination: Hashable {
-    case game(String)
-    case tool(Tool)
-}
-
-/// The native sidebar: every game with its state (⌘1–⌘3 switch), then the app's pages.
+/// The native sidebar: Home, every game with its state (⌘1–⌘3 switch), then the app's pages.
 struct GameSidebar: View {
     @Environment(AppModel.self) private var model
-    @Binding var selectedID: String
-    @Binding var tool: Tool?
-
-    private var selection: Binding<Destination?> {
-        Binding(
-            get: { tool.map(Destination.tool) ?? .game(selectedID) },
-            set: {
-                switch $0 {
-                case .game(let id): selectedID = id; tool = nil
-                case .tool(let page): tool = page
-                case nil: break
-                }
-            }
-        )
-    }
+    @Binding var page: Page
 
     var body: some View {
-        List(selection: selection) {
+        List(selection: Binding<Page?>(get: { page }, set: { if let value = $0 { page = value } })) {
+            Label("Home", systemImage: "house").tag(Page.home)
             Section {
                 ForEach(model.visibleGames) { game in
-                    GameRow(game: game, art: model.gameArt[game.id], badge: badge(for: game), subtitle: subtitle(for: game))
-                        .tag(Destination.game(game.id))
+                    GameRow(game: game, art: model.gameArt[game.id], badge: badge(for: game), subtitle: model.statusSubtitle(for: game))
+                        .tag(Page.game(game.id))
                         .accessibilityLabel(game.name)
                 }
             }
             Section {
-                Label("Dependencies", systemImage: "shippingbox").tag(Destination.tool(.dependencies))
-                Label("Help & Performance", systemImage: "lifepreserver").tag(Destination.tool(.support))
-                Label("Diagnostics", systemImage: "stethoscope").tag(Destination.tool(.diagnostics))
+                Label("Dependencies", systemImage: "shippingbox").tag(Page.tool(.dependencies))
+                Label("Help & Performance", systemImage: "lifepreserver").tag(Page.tool(.support))
+                Label("Diagnostics", systemImage: "stethoscope").tag(Page.tool(.diagnostics))
                 SettingsLink { Label("Settings", systemImage: "gearshape") }
                     .buttonStyle(.plain)
             }
@@ -100,26 +81,11 @@ struct GameSidebar: View {
     /// ⌘1, ⌘2, ⌘3 pick a game without the pointer.
     private var shortcuts: some View {
         ForEach(Array(model.visibleGames.prefix(9).enumerated()), id: \.element.id) { index, game in
-            Button(game.name) { selectedID = game.id; tool = nil }
+            Button(game.name) { page = .game(game.id) }
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 .opacity(0)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-        }
-    }
-
-    /// One short line under the name, using the footer's own wording.
-    private func subtitle(for game: LauncherGame) -> String? {
-        switch model.launchState(for: game.id) {
-        case .running, .ready: return String(localized: "Playing")
-        default: break
-        }
-        switch model.games[game.id]?.status {
-        case .notInstalled: return String(localized: "Not installed")
-        case .installed(let tag): return String(localized: "Version \(tag) · Installed", comment: "Game status; the argument is the game version")
-        case .updateAvailable(_, let to): return String(localized: "Update to \(to)")
-        case .paused: return String(localized: "Paused")
-        default: return nil
         }
     }
 
@@ -134,6 +100,23 @@ struct GameSidebar: View {
         if state?.activity != nil { return .busy(nil) }
         if case .updateAvailable = state?.status { return .update }
         return .none
+    }
+}
+
+extension AppModel {
+    /// One short line for a game's state, shared by the sidebar and the Home cards.
+    func statusSubtitle(for game: LauncherGame) -> String? {
+        switch launchState(for: game.id) {
+        case .running, .ready: return String(localized: "Playing")
+        default: break
+        }
+        switch games[game.id]?.status {
+        case .notInstalled: return String(localized: "Not installed")
+        case .installed(let tag): return String(localized: "Version \(tag) · Installed", comment: "Game status; the argument is the game version")
+        case .updateAvailable(_, let to): return String(localized: "Update to \(to)")
+        case .paused: return String(localized: "Paused")
+        default: return nil
+        }
     }
 }
 

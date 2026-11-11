@@ -1,102 +1,95 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
-name: Release (draft)
+name: Release
+# A release is published when CI passes on main and MARKETING_VERSION in project.yml has no tag yet.
+# Bump the version and add ReleaseNotes/<version>.md to ship. Run it by hand to retry a failed release.
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      version:
-        description: Release name, for example 0.1.1-beta. The numeric part must match MARKETING_VERSION in project.yml.
-        required: true
-        type: string
 permissions:
   contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
 jobs:
-  draft:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: xcode-27
     timeout-minutes: 30
     permissions:
-      contents: write # Only the final draft-release step uses this token.
+      contents: write # Only the final release step uses this token.
       actions: read # Reads the CI result for the released commit.
     env:
       GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ inputs.version }}
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - name: Check the branch and release name
-        run: |
-          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
-            echo "error: run this workflow on main, not $GITHUB_REF" >&2
-            exit 1
-          fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-            echo "error: release name must look like 0.1.1 or 0.1.1-beta, got: $VERSION" >&2
-            exit 1
-          fi
-
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.SHA }}
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Validate release notes
+      - name: Read the version and check that it is new
+        id: version
         run: |
           set -euo pipefail
-          numeric_version="${VERSION%%-*}"
-          notes_file="ReleaseNotes/$numeric_version.md"
-          python3 -I scripts/make-appcast.py --check-notes "$notes_file"
-          echo "RELEASE_NOTES=$notes_file" >> "$GITHUB_ENV"
-
-      # A draft creates its tag only when published, so check both.
-      - name: Check that the release does not exist yet
-        run: |
-          set -euo pipefail
-          tag="v$VERSION"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "error: release $tag already exists" >&2
-            exit 1
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "error: run this workflow on main" >&2; exit 1; }
+            conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" \
+              --event push --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+            [[ "$conclusion" == success ]] || { echo "error: CI for $SHA is '${conclusion:-not finished}'" >&2; exit 1; }
           fi
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
-            echo "error: tag $tag already exists" >&2
-            exit 1
+          version=$(sed -n 's/^ *MARKETING_VERSION: *//p' project.yml | head -1)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "error: bad MARKETING_VERSION '$version'" >&2; exit 1; }
+          tag="v$version"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists. Bump MARKETING_VERSION to publish a new one." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          notes="ReleaseNotes/$version.md"
+          python3 -I scripts/make-appcast.py --check-notes "$notes"
+          {
+            echo "publish=true"
+            echo "version=$version"
+            echo "notes=$notes"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Require green CI on this commit
-        run: |
-          set -euo pipefail
-          conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
-            --event push --limit 1 --json conclusion --jq '.[0].conclusion // ""')
-          if [[ "$conclusion" != "success" ]]; then
-            echo "error: CI for $GITHUB_SHA is '${conclusion:-not finished}', wait for it to pass" >&2
-            exit 1
-          fi
-
-      - name: Validate update key and set build number
-        run: |
-          set -euo pipefail
-          public_key=$(ruby -ryaml -e 'puts YAML.load_file("project.yml").fetch("targets").fetch("MacGacha").fetch("settings").fetch("base").fetch("SPARKLE_PUBLIC_ED_KEY")')
-          python3 -I scripts/make-appcast.py --check-public-key "$public_key"
-          echo "MACGACHA_BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
-          echo "MACGACHA_DERIVED_DATA_PATH=$RUNNER_TEMP/macgacha-release-dd" >> "$GITHUB_ENV"
       - name: Install XcodeGen
+        if: steps.version.outputs.publish == 'true'
         run: brew install xcodegen
 
       - name: Build the disk image
-        run: scripts/package-dmg.sh "$VERSION" out
-
-      - name: Sign update and generate appcast
+        if: steps.version.outputs.publish == 'true'
         env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "MACGACHA_BUILD_NUMBER=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          echo "MACGACHA_DERIVED_DATA_PATH=$RUNNER_TEMP/macgacha-release-dd" >> "$GITHUB_ENV"
+          MACGACHA_BUILD_NUMBER=$(git rev-list --count HEAD) MACGACHA_DERIVED_DATA_PATH="$RUNNER_TEMP/macgacha-release-dd" \
+            scripts/package-dmg.sh "$VERSION" out
+
+      # In-app updates need the owner's Sparkle key. Without the secret the release still ships, without an appcast.
+      - name: Sign the update and write the appcast
+        if: steps.version.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ steps.version.outputs.notes }}
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           set +x
           if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
-            echo "error: SPARKLE_ED_PRIVATE_KEY is not configured" >&2
-            exit 1
+            echo "No SPARKLE_ED_PRIVATE_KEY secret: publishing without an appcast." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           signer=$(find "$MACGACHA_DERIVED_DATA_PATH/SourcePackages/artifacts" -type f -path '*/bin/sign_update' -print -quit)
-          if [[ -z "$signer" || ! -x "$signer" ]]; then
-            echo "error: Sparkle sign_update was not found in the resolved artifacts" >&2
-            exit 1
-          fi
+          [[ -n "$signer" && -x "$signer" ]] || { echo "error: Sparkle sign_update was not found" >&2; exit 1; }
           umask 077
           key_file=$(mktemp "$RUNNER_TEMP/macgacha-sparkle-key.XXXXXX")
           trap 'rm -f "$key_file"' EXIT
@@ -112,11 +105,15 @@ jobs:
             --dmg "out/MacGacha-$VERSION.dmg" --signature "$signature" --notes "$RELEASE_NOTES" --output out/appcast.xml
           python3 -I -c 'import xml.etree.ElementTree as ET; ET.parse("out/appcast.xml")'
 
-      - name: Create the draft release
+      - name: Publish the release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ steps.version.outputs.notes }}
         run: |
           set -euo pipefail
-          tag="v$VERSION"
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft \
-            --title "MacGacha ${VERSION/-/ }" --target "$GITHUB_SHA" --notes-file "$RELEASE_NOTES" \
-            "out/MacGacha-$VERSION.dmg" "out/MacGacha-$VERSION.dmg.sha256" "out/appcast.xml"
-          echo "Draft release $tag is ready. Edit its notes and publish it on GitHub." >> "$GITHUB_STEP_SUMMARY"
+          assets=("out/MacGacha-$VERSION.dmg" "out/MacGacha-$VERSION.dmg.sha256")
+          [[ -f out/appcast.xml ]] && assets+=(out/appcast.xml)
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --latest \
+            --title "MacGacha4Life $VERSION" --target "$SHA" --notes-file "$RELEASE_NOTES" "${assets[@]}"
+          echo "Published v$VERSION." >> "$GITHUB_STEP_SUMMARY"

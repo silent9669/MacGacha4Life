@@ -10,12 +10,20 @@ enum Tool: String, Hashable {
     case dependencies, support, diagnostics
 }
 
-/// The launcher window: a system sidebar lists the games and the app's pages. A game's art
-/// fills the detail, with its facts in the toolbar and its action in a Liquid Glass bar.
+/// What the sidebar selects.
+enum Page: Hashable {
+    case home
+    case game(String)
+    case tool(Tool)
+}
+
+/// The launcher window: a system sidebar lists Home, the games and the app's pages. Home shows
+/// every game as a card; a game's page opens with its art and Liquid Glass action bar, then cards.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @SceneStorage("selectedGame") private var selectedID = LauncherGame.all[0].id
-    @State private var tool: Tool?
+    @State private var page: Page = .home
+    @State private var playTime = PlayTimeStore()
     @State private var gameSheet: GameSheet?
     /// On by default like HoYoPlay; Reduce Motion starts with still images instead.
     @AppStorage("animatedBackgrounds") private var animatedSetting = true
@@ -34,7 +42,20 @@ struct RootView: View {
     @State private var shownSlide: GameBackground?
     /// Narrow windows drop the events card and the quick facts, so the art and the action card stay clear.
     @State private var pageWidth: CGFloat = 1000
+    @State private var pageHeight: CGFloat = 700
     private var compact: Bool { pageWidth < 900 }
+    /// The hero leaves a strip of the cards below it in view, so the page reads as scrollable.
+    private var heroHeight: CGFloat { max(380, min(pageHeight - 96, pageWidth * 0.56)) }
+
+    /// Games playing right now, for playtime.
+    private var liveGames: Set<String> {
+        Set(LauncherGame.all.map(\.id).filter {
+            switch model.launchState(for: $0) {
+            case .running, .ready: true
+            default: false
+            }
+        })
+    }
 
     /// The rail shows one region; a selection from the other region falls back to its first game.
     private var game: LauncherGame {
@@ -80,8 +101,32 @@ struct RootView: View {
             .id(game.id)
     }
 
-    /// The selected game's art fills the page; its facts and actions float over it as glass.
+    /// The selected game's art fills the top of its page, with the action bar over it; cards follow.
     private var gamePage: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                hero.frame(height: heroHeight)
+                GameDetails(game: game, gameSheet: $gameSheet)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+            }
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { pageWidth = $0.width; pageHeight = $0.height }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        // The art stops at the sidebar's edge, so its logo and title aren't covered.
+        .ignoresSafeArea(.container, edges: [.top, .trailing])
+        .navigationTitle(game.name)
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .toolbar {
+            ToolbarSpacer(.flexible)
+            ToolbarItem(placement: .primaryAction) {
+                StatChips(game: game) { gameSheet = .settings(game.id) }
+            }
+        }
+    }
+
+    private var hero: some View {
         ZStack {
             // An entry's video joins only once its own still is on screen, so the still, theme
             // and highlights never lag behind the motion.
@@ -98,13 +143,7 @@ struct RootView: View {
                     .frame(maxHeight: .infinity, alignment: .top)
             }
             HStack(alignment: .bottom, spacing: 16) {
-                VStack(alignment: .leading, spacing: 14) {
-                    footer(.highlights)
-                    if !compact {
-                        footer(.events)
-                            .frame(maxWidth: 420)
-                    }
-                }
+                footer(.highlights)
                 Spacer(minLength: 24)
                 footer(.actions)
                     .frame(width: compact ? min(440, max(300, pageWidth - 200)) : 440)
@@ -112,37 +151,38 @@ struct RootView: View {
             .padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { pageWidth = $0 }
-        // The art stops at the sidebar's edge, so its logo and title aren't covered.
-        .ignoresSafeArea(.container, edges: [.top, .bottom, .trailing])
-        .navigationTitle(game.name)
-        .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar {
-            ToolbarSpacer(.flexible)
-            ToolbarItem(placement: .primaryAction) {
-                StatChips(game: game) { gameSheet = .settings(game.id) }
-            }
-        }
+        .clipped()
     }
 
     @ViewBuilder private var detail: some View {
-        switch tool {
-        case nil: gamePage
-        case .dependencies: NavigationStack { DependenciesView() }
-        case .support: NavigationStack { SupportView(game: game) { gameSheet = .settings(game.id) } }
-        case .diagnostics: NavigationStack { DiagnosticsView() }
+        switch page {
+        case .home: HomeView(page: $page)
+        case .game: gamePage
+        case .tool(.dependencies): NavigationStack { DependenciesView() }
+        case .tool(.support): NavigationStack { SupportView(game: game) { gameSheet = .settings(game.id) } }
+        case .tool(.diagnostics): NavigationStack { DiagnosticsView() }
         }
     }
 
     var body: some View {
         NavigationSplitView {
-            GameSidebar(selectedID: Binding(get: { game.id }, set: { selectedID = $0 }), tool: $tool)
+            GameSidebar(page: $page)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 244, max: 300)
         } detail: {
             detail
         }
-        .animation(.smooth(duration: 0.35), value: selectedID)
+        .environment(playTime)
+        .animation(.smooth(duration: 0.35), value: page)
+        .onChange(of: page, initial: true) { _, new in
+            if case .game(let id) = new { selectedID = id }
+        }
+        // The launch state is only known once startup has reattached running games.
+        .onChange(of: liveGames, initial: true) { _, live in
+            if !model.isStarting { playTime.update(live: live) }
+        }
+        .onChange(of: model.isStarting) { _, starting in
+            if !starting { playTime.update(live: liveGames) }
+        }
         .onChange(of: selectionInputs, initial: true) { old, new in
             if old.gameID != new.gameID || old.region != new.region { shownSlide = nil }
             images.preload(new.backgrounds.flatMap { [$0.image, $0.theme, $0.highlights?.image, $0.highlights?.hoverImage].compactMap { $0 } })
@@ -176,7 +216,7 @@ struct RootView: View {
             case .settings(let id):
                 GameSettingsSheet(game: Self.game(id))
             case .setup(let id):
-                RuntimeSetupSheet(game: Self.game(id)) { tool = .dependencies }
+                RuntimeSetupSheet(game: Self.game(id)) { page = .tool(.dependencies) }
             case .rosetta(let id):
                 RosettaSheet(game: Self.game(id))
             }
@@ -210,9 +250,10 @@ struct RootView: View {
         let defaults = UserDefaults.standard
         if let id = defaults.string(forKey: "MacGachaDebugGame"), LauncherGame.all.contains(where: { $0.id == id }) {
             selectedID = id
+            page = .game(id)
         }
-        if let name = defaults.string(forKey: "MacGachaDebugPanel") {
-            tool = Tool(rawValue: name)
+        if let name = defaults.string(forKey: "MacGachaDebugPanel"), let tool = Tool(rawValue: name) {
+            page = .tool(tool)
         }
         if defaults.bool(forKey: "MacGachaDebugSettings") { openSettings() }
         if let path = defaults.string(forKey: "MacGachaDebugSnapshot") { Self.snapshotWindows(to: path) }
