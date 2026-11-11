@@ -18,6 +18,7 @@
 
 - **Home.** Every game as a card with one-click Play, your playtime, free disk space and the latest HoYoPlay events.
 - **A page per game.** Full-bleed art, a glass action bar, and cards for graphics, frame limit, performance overlay, playtime and size on disk.
+- **Load estimate.** A green, yellow or red dot beside each setting shows how hard it works your Mac.
 - **Managed for you.** Installs, updates, repairs and voice packs from HoYoverse's official servers, plus Wine, DXMT and D3DMetal. Downloads pause and resume.
 - **Help & Performance.** Search the web for a game's problems, read known issues, report a bug with your system info and check the settings that affect speed.
 - **Menu bar Quick Play.** The launcher shows still images while you play, so it never competes with the game for the GPU.

@@ -29,7 +29,7 @@ struct MacGachaApp: App {
                 }
         }
         .windowResizability(.contentMinSize)
-        .defaultSize(width: 1280, height: 720)
+        .defaultSize(width: 1440, height: 900)
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { model.checkForUpdates() }

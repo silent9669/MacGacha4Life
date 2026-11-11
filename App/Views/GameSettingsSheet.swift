@@ -13,6 +13,7 @@ struct GameSettingsSheet: View {
 
     @State private var showsFpsRisk = false
     @State private var customFpsTarget = false
+    @State private var mac = MacProfile.current()
 
     private var settings: Binding<LaunchSettings> {
         Binding(
@@ -111,6 +112,19 @@ struct GameSettingsSheet: View {
         )
     }
 
+    private var genshinTarget: Int? {
+        model.offersGenshinFps(for: game.id) && model.genshinFpsUnlock(for: game.id) ? model.genshinFpsTarget(for: game.id) : nil
+    }
+
+    private var frames: Int { settings.wrappedValue.frameLimit ?? genshinTarget ?? PerformanceEstimate.frames(for: settings.wrappedValue) }
+
+    private func dotted(_ title: LocalizedStringKey, _ level: LoadLevel) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+            LoadDot(level: level)
+        }
+    }
+
     /// Only Zenless Zone Zero has a DirectX 12 renderer, and only D3DMetal runs it.
     private var offersDirectX12: Bool { Recipes.recipe(for: game.id)?.supportsDirectX12 == true }
 
@@ -118,22 +132,36 @@ struct GameSettingsSheet: View {
         NavigationStack {
             Form {
                 Section {
+                    LoadSummary(estimate: PerformanceEstimate.estimate(settings.wrappedValue, mac: mac, genshinTarget: genshinTarget))
+                }
+                Section {
                     Picker("Graphics", selection: settings.backend) {
                         Text("D3DMetal", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.d3dmetal)
                         Text("DXMT", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.dxmt)
                     }
                     .pickerStyle(.segmented)
-                    Picker("Frame limit", selection: settings.frameLimit) {
-                        Text("Off").tag(Int?.none)
-                        ForEach([30, 60, 90, 120], id: \.self) { fps in
-                            Text(fps.formatted()).tag(Int?.some(fps))
+                    LabeledContent {
+                        Picker("Frame limit", selection: settings.frameLimit) {
+                            Text("Off").tag(Int?.none)
+                            ForEach([30, 60, 90, 120], id: \.self) { fps in
+                                Text(fps.formatted()).tag(Int?.some(fps))
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                    } label: {
+                        dotted("Frame limit", PerformanceEstimate.level(frames: frames, mac: mac))
                     }
-                    .pickerStyle(.segmented)
                     if offersDirectX12 {
-                        Toggle("DirectX 12", isOn: settings.directX12)
-                            .disabled(settings.wrappedValue.backend != .d3dmetal)
+                        Toggle(isOn: settings.directX12) {
+                            dotted("DirectX 12", settings.wrappedValue.directX12 ? PerformanceEstimate.directX12Level(mac: mac) : .light)
+                        }
+                        .disabled(settings.wrappedValue.backend != .d3dmetal)
                     }
+                    Toggle(isOn: settings.retina) {
+                        dotted("Retina resolution", settings.wrappedValue.retina ? PerformanceEstimate.retinaLevel(mac: mac) : .light)
+                    }
+                    Toggle(isOn: settings.metalHUD) { dotted("Performance overlay", .light) }
                 } footer: {
                     Text(graphicsFooter)
                         .font(.caption)
@@ -141,7 +169,7 @@ struct GameSettingsSheet: View {
                 }
                 if offersStarRailUnlock {
                     Section {
-                        Toggle("Unlock 120 FPS", isOn: unlockFPS)
+                        Toggle(isOn: unlockFPS) { dotted("Unlock 120 FPS", unlockFPS.wrappedValue ? PerformanceEstimate.level(frames: settings.wrappedValue.unlockTarget, mac: mac) : .light) }
                     } footer: {
                         Text(unlockFooter)
                             .font(.caption)
@@ -150,7 +178,7 @@ struct GameSettingsSheet: View {
                 }
                 if model.offersGenshinFps(for: game.id) {
                     Section {
-                        Toggle("Unlock frame rate", isOn: genshinFpsUnlock)
+                        Toggle(isOn: genshinFpsUnlock) { dotted("Unlock frame rate", genshinFpsUnlock.wrappedValue ? PerformanceEstimate.level(frames: genshinFpsTarget.wrappedValue, mac: mac) : .light) }
                         if genshinFpsUnlock.wrappedValue {
                             Picker("Target", selection: genshinFpsCustom) {
                                 Text(120.formatted()).tag(false)
@@ -168,7 +196,7 @@ struct GameSettingsSheet: View {
                 }
                 if model.offersSurround(for: game.id) {
                     Section {
-                        Toggle("Surround sound", isOn: settings.surroundSound)
+                        Toggle(isOn: settings.surroundSound) { dotted("Surround sound", .light) }
                     } footer: {
                         Text("The game mixes 7.1 audio. On headphones and AirPods it plays as Spatial Audio, and a 5.1 or 7.1 output gets the channels directly. Also pick surround output in the game's audio settings.")
                             .font(.caption)
@@ -193,20 +221,6 @@ struct GameSettingsSheet: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                }
-                Section {
-                    Toggle("Performance overlay", isOn: settings.metalHUD)
-                } footer: {
-                    Text("Shows Apple's Metal overlay with the frame rate and GPU time while you play. Changes apply the next time you press Play.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Section {
-                    Toggle("Retina resolution", isOn: settings.retina)
-                } footer: {
-                    Text("Sharper, but much heavier on the GPU.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Toggle("Compatibility patches", isOn: settings.compatibilityPatches)

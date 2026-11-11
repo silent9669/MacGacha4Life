@@ -22,11 +22,6 @@ struct HomeView: View {
         return try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
     }
 
-    /// The newest two posts of each game in the rail.
-    private var latestEvents: [(game: LauncherGame, event: GameEvent)] {
-        model.visibleGames.flatMap { game in (model.gameEvents[game.id] ?? []).prefix(2).map { (game, $0) } }
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -49,15 +44,7 @@ struct HomeView: View {
                         model.gameModeEnabled ? Text("On") : Text("Off")
                     } action: { page = .tool(.support) }
                 }
-                if !latestEvents.isEmpty {
-                    Card("Events") {
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(latestEvents.enumerated()), id: \.offset) { _, item in
-                                EventRow(event: item.event, icon: model.gameArt[item.game.id]?.icon)
-                            }
-                        }
-                    }
-                }
+                LatestEventsCard()
             }
             .padding(24)
         }

@@ -9,7 +9,8 @@ import SwiftUI
 /// The card leads with what games use now; older and newer versions sit below it.
 struct DependenciesView: View {
     @Environment(AppModel.self) private var model
-    @State private var category: RuntimeCategory = .runtimes
+    /// Opens a game's setup sheet, which lists what it needs and asks for Apple's terms when they apply.
+    let setUp: (String) -> Void
 
     var body: some View {
         Group {
@@ -18,41 +19,29 @@ struct DependenciesView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(category.explanation)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        ForEach(groups) { group in
-                            DependencyCard(group: group)
+                    VStack(alignment: .leading, spacing: 20) {
+                        Readiness(setUp: setUp)
+                        ForEach(RuntimeCategory.allCases, id: \.self) { category in
+                            let groups = groups(in: category)
+                            if !groups.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(category.title).font(.headline)
+                                    Text(category.explanation)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 380), spacing: 12, alignment: .top)], spacing: 12) {
+                                        ForEach(groups) { group in DependencyCard(group: group) }
+                                    }
+                                }
+                            }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                    .animation(.smooth(duration: 0.2), value: category)
-                }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Picker("Category", selection: $category) {
-                        ForEach(RuntimeCategory.allCases, id: \.self) { item in
-                            Text(item.title).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(20)
                 }
             }
         }
         .navigationTitle("Dependencies")
-        #if DEBUG
-        .onAppear {
-            if let name = UserDefaults.standard.string(forKey: "MacGachaDebugCategory"), let value = RuntimeCategory(rawValue: name) {
-                category = value
-            }
-        }
-        #endif
         .toolbar {
             ToolbarItem {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -64,7 +53,7 @@ struct DependenciesView: View {
         }
     }
 
-    private var groups: [RuntimeVersionGroup] {
+    private func groups(in category: RuntimeCategory) -> [RuntimeVersionGroup] {
         RuntimeVersionGroup.group(model.rows).filter { $0.category == category }
     }
 }
@@ -127,11 +116,31 @@ private struct DependencyCard: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let users = usedBy {
+                    Text("Used by \(users)", comment: "Dependency note; the argument is a list of game names")
+                        .detailStyle()
+                }
                 detail.padding(.top, 2)
             }
             Spacer(minLength: 12)
             actions
         }
+    }
+
+    /// The games this dependency serves, so removing or updating it has no surprises.
+    private var usedBy: String? {
+        let games = model.visibleGames.filter { game in
+            guard let family = GameDefinition.find(game.id)?.family else { return false }
+            switch group.id {
+            case "bundle-dxmt": return model.launchSettings(for: game.id).backend == .dxmt
+            case "bundle-d3dmetal": return model.launchSettings(for: game.id).backend == .d3dmetal
+            case "component-jadeite": return family == .starrail
+            case "component-genshinFps": return family == .genshin
+            case "component-steamShim", "component-crypt32Fix", "component-surroundAudio": return family != .starrail
+            default: return false
+            }
+        }
+        return games.isEmpty ? nil : games.map(\.name).formatted(.list(type: .and))
     }
 
     @ViewBuilder private var badge: some View {
@@ -381,31 +390,34 @@ private struct StatusBadge: View {
     }
 }
 
-/// A rounded tile in the dependency's color, like the icons in System Settings.
+/// A rounded tile in the dependency's own two colors, like the icons in System Settings.
 private struct DependencyIcon: View {
     let familyID: String
 
     var body: some View {
         let style = Self.style(familyID)
         Image(systemName: style.symbol)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(size: 21, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
             .foregroundStyle(.white)
-            .frame(width: 34, height: 34)
-            .background(style.tint.gradient, in: .rect(cornerRadius: 8, style: .continuous))
+            .frame(width: 44, height: 44)
+            .background(LinearGradient(colors: [style.top, style.bottom], startPoint: .top, endPoint: .bottom),
+                in: .rect(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
             .accessibilityHidden(true)
     }
 
-    private static func style(_ id: String) -> (symbol: String, tint: Color) {
+    private static func style(_ id: String) -> (symbol: String, top: Color, bottom: Color) {
         switch id {
-        case "bundle-dxmt", "component-dxmt": ("cube.transparent.fill", .blue)
-        case "bundle-d3dmetal", "component-d3dmetal": ("cpu.fill", .purple)
-        case "component-wine": ("wineglass.fill", .red)
-        case "component-jadeite": ("diamond.fill", .teal)
-        case "component-steamShim": ("gamecontroller.fill", .indigo)
-        case "component-crypt32Fix": ("checkmark.seal.fill", .orange)
-        case "component-surroundAudio": ("hifispeaker.2.fill", .pink)
-        case "component-genshinFps": ("speedometer", .red)
-        default: ("shippingbox.fill", .gray)
+        case "bundle-dxmt", "component-dxmt": ("cube.transparent.fill", .cyan, .blue)
+        case "bundle-d3dmetal", "component-d3dmetal": ("cpu.fill", .pink, .purple)
+        case "component-wine": ("wineglass.fill", .orange, .red)
+        case "component-jadeite": ("diamond.fill", .mint, .teal)
+        case "component-steamShim": ("gamecontroller.fill", .blue, .indigo)
+        case "component-crypt32Fix": ("checkmark.seal.fill", .yellow, .orange)
+        case "component-surroundAudio": ("hifispeaker.2.fill", .red, .pink)
+        case "component-genshinFps": ("speedometer", .orange, .red)
+        default: ("shippingbox.fill", .gray, .gray)
         }
     }
 
@@ -496,7 +508,85 @@ private struct TintedIconLabelStyle: LabelStyle {
 }
 
 #Preview {
-    DependenciesView()
+    DependenciesView { _ in }
         .environment(AppModel.preview())
         .frame(width: 720, height: 520)
+}
+
+/// One tile per game: the graphics layer it uses, then ready, setting up, or what it still needs with a button
+/// that opens its setup. Choosing the other graphics layer changes what the game needs.
+private struct Readiness: View {
+    @Environment(AppModel.self) private var model
+    let setUp: (String) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)], spacing: 12) {
+            ForEach(model.visibleGames) { game in tile(game) }
+        }
+    }
+
+    private func backend(_ game: LauncherGame) -> Binding<RuntimeBackend> {
+        Binding(
+            get: { model.launchSettings(for: game.id).backend },
+            set: { value in
+                var settings = model.launchSettings(for: game.id)
+                settings.backend = value
+                do { try model.saveLaunchSettings(settings, for: game.id) } catch { model.show(error) }
+            }
+        )
+    }
+
+    private func tile(_ game: LauncherGame) -> some View {
+        let plan = model.runtimeSetupPlan(for: game.id)
+        let busy: Bool = if case .installing = model.runtimeSetupProgress[game.id] { true } else { false }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(game.tint.gradient)
+                    if let icon = model.gameArt[game.id]?.icon { LocalImage(url: icon) }
+                }
+                .frame(width: 36, height: 36)
+                .clipShape(.rect(cornerRadius: 9, style: .continuous))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(game.name).font(.headline).lineLimit(1)
+                    if let plan {
+                        Text(plan.items.map(\.name).formatted(.list(type: .and))).detailStyle().lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                trailing(game, plan: plan)
+            }
+            Picker("Graphics", selection: backend(game)) {
+                Text("D3DMetal", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.d3dmetal)
+                Text("DXMT", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.dxmt)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(busy)
+        }
+        .padding(14)
+        .background(.background.secondary, in: .rect(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+    }
+
+    @ViewBuilder private func trailing(_ game: LauncherGame, plan: RuntimeSetupPlan?) -> some View {
+        if case .installing(_, _, _, let fraction) = model.runtimeSetupProgress[game.id] {
+            if let fraction { ProgressView(value: fraction).frame(width: 80) } else { ProgressView().controlSize(.small) }
+        } else if let plan {
+            VStack(alignment: .trailing, spacing: 2) {
+                Button("Set Up…") { setUp(game.id) }
+                    .buttonStyle(.borderedProminent)
+                if let size = plan.totalSize { Text(ByteSize.text(size)).detailStyle().monospacedDigit() }
+            }
+        } else if model.missingComponents(for: game.id) {
+            Label("Not installed", systemImage: "exclamationmark.circle.fill")
+                .labelStyle(TintedIconLabelStyle(tint: .orange))
+                .detailStyle()
+        } else {
+            Label("Ready", systemImage: "checkmark.circle.fill")
+                .labelStyle(TintedIconLabelStyle(tint: .green))
+                .detailStyle()
+        }
+    }
 }

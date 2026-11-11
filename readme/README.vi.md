@@ -19,6 +19,7 @@
 
 - **Trang chủ.** Mỗi game là một thẻ với nút Play một chạm, thời gian chơi, dung lượng trống và các sự kiện HoYoPlay mới nhất.
 - **Mỗi game một trang.** Ảnh nghệ thuật tràn viền, thanh thao tác kính mờ và các thẻ về đồ họa, giới hạn khung hình, lớp phủ hiệu năng, thời gian chơi và dung lượng trên ổ đĩa.
+- **Ước tính tải.** Chấm xanh, vàng hoặc đỏ cạnh mỗi cài đặt cho biết mức độ nặng với máy Mac của bạn.
 - **Được quản lý giúp bạn.** Cài đặt, cập nhật, sửa chữa và gói giọng nói từ máy chủ chính thức của HoYoverse, cùng Wine, DXMT và D3DMetal. Có thể tạm dừng và tiếp tục tải xuống.
 - **Trợ giúp & Hiệu năng.** Tìm trên web các sự cố của game, xem lỗi đã biết, báo lỗi kèm thông tin hệ thống và kiểm tra các cài đặt ảnh hưởng đến tốc độ.
 - **Quick Play trên thanh menu.** Trình khởi chạy chỉ hiện ảnh tĩnh khi bạn chơi, nên không tranh GPU với game.
