@@ -103,6 +103,9 @@ public actor GameLibrary {
         do { try requireGameLocationAvailable(record.installPath) }
         catch { return .locationUnavailable(record.installPath) }
         if record.uninstalling { return .uninstallPaused }
+        // A folder the user moved or renamed. `relocate` points the record at it again.
+        var info = stat()
+        if lstat(record.installPath.path, &info) != 0, errno == ENOENT { return .locationUnavailable(record.installPath) }
         if let pending = record.pending { return .paused(pending.kind) }
         guard let installed = record.installed else { return .unknown }
         let latest: GameBranch?
@@ -206,6 +209,21 @@ public actor GameLibrary {
         try await store.delete(game.id)
         hooks.reach(.afterUninstallRecordDeleted)
         try await store.deleteGameDirectory(game.id)
+    }
+
+    /// Points the record at the folder after the user moved or renamed it. Only the same folder
+    /// is accepted: its volume and inode must match the recorded identity. No game file changes.
+    public func relocate(_ game: GameDefinition, to folder: URL) async throws {
+        try await operationGuard?.willOperate(on: game.id)
+        let gameLock = try acquireGameLock(game.id)
+        let lease = try await store.acquireOperationLease(retainedGameLock: gameLock); defer { withExtendedLifetime(lease) {} }
+        let records = try await store.records()
+        guard var record = records[game.id], !record.uninstalling else { throw LauncherError.io("game is not installed") }
+        try checkNewLocation(folder, records: records, game: game, empty: false)
+        guard let fs = try ContainedFileSystem(root: folder, fileOps: fileOps).pinRootIfPresent(),
+            try fs.rootIdentity() == record.installIdentity else { throw LauncherError.io("not the game's folder") }
+        record.installPath = folder.standardizedFileURL
+        try await store.save(record, for: game.id)
     }
 
     func acquireGameLock(_ game: String) throws -> InstallLock {

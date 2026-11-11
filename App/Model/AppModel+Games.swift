@@ -169,6 +169,12 @@ private struct GameSnapshot: Sendable {
         beginGame(id, .resume(true)) // Resume the exact saved plan; never rebuild it.
     }
     func uninstallGame(_ id: String) async { await beginGame(id, .uninstall)?.value }
+    /// The user moved the game's folder and picked where it is now.
+    func relocateGame(_ id: String, to folder: URL) async {
+        do { try await gameServices.relocate(id, to: folder) } catch { show(error) }
+        gameLastRefresh[region] = nil
+        await refreshGames()
+    }
     func installedVoices(_ id: String) -> Set<String> { gameRecords[id]?.installed?.voices ?? [] }
     func gameRecord(_ id: String) -> GameRecord? { gameRecords[id] }
 

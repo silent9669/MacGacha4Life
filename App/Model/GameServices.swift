@@ -28,6 +28,11 @@ protocol GameServices: Sendable {
     func verify(_ id: String, mode: Verifier.Mode) async -> GameEventStream
     func setVoices(_ id: String, _ voices: Set<String>) async -> GameEventStream
     func uninstall(_ id: String) async throws
+    func relocate(_ id: String, to folder: URL) async throws
+}
+
+extension GameServices {
+    func relocate(_ id: String, to folder: URL) async throws {}
 }
 
 /// Existing fakes and previews opt out without touching delivery or disk.
@@ -156,6 +161,10 @@ final class LiveGameServices: GameServices, Sendable {
     }
     func uninstall(_ id: String) async throws {
         do { let game = try Self.requireGame(id); try await library(for: game).uninstall(game) }
+        catch { throw await failure(error, id: id) }
+    }
+    func relocate(_ id: String, to folder: URL) async throws {
+        do { let game = try Self.requireGame(id); try await library(for: game).relocate(game, to: folder) }
         catch { throw await failure(error, id: id) }
     }
     private static func game(_ id: String) -> GameDefinition? { GameDefinition.all.first { $0.id == id } }
