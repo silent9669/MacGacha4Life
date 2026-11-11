@@ -54,7 +54,9 @@ actor LiveLaunchServices: LaunchServices, GameOperationGuard {
             else { runtimes = LiveLaunchRuntimes(manifest: manifest, manager: bundles, store: store) }
             return LaunchManager(paths: paths, runtimes: runtimes,
                 prefixes: PrefixManager(paths: paths, runner: runner), preparation: LaunchPreparation(paths: paths, runner: runner),
-                spawner: SystemProcessSpawner(), inspector: SystemProcessInspector(), runner: runner, clock: ContinuousClock(), log: log, gameMode: GameModeHelper(paths: paths, icons: icons))
+                spawner: SystemProcessSpawner(), inspector: SystemProcessInspector(), runner: runner, clock: ContinuousClock(), log: log, gameMode: GameModeHelper(paths: paths, icons: icons),
+                // Two levels below Contents, so the mask in Contents/Resources is found. The folder need not exist.
+                crossOverRoot: Bundle.main.sharedSupportURL?.appendingPathComponent("CrossOver"))
         }
         construction = task
         return try await task.value

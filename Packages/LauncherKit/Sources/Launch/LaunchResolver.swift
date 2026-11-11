@@ -65,7 +65,7 @@ public enum LaunchResolver {
         wineBinary: URL, proxyPort: UInt16, componentRoots: [ComponentKind: URL], baseEnvironment: [String: String],
         runtimeBundleID: String? = nil, displays: [String] = [],
         gameModeRuntime: GameModeRuntime? = nil, gameModeEnabled: Bool = true,
-        genshinFpsRiskAcknowledged: Bool = false) throws -> ResolvedLaunch {
+        genshinFpsRiskAcknowledged: Bool = false, crossOverRoot: URL? = nil) throws -> ResolvedLaunch {
         guard Recipes.recipe(for: recipe.game) != nil else { throw LauncherError.io("Unknown launch game: \(recipe.game)") }
         try settings.validate(for: recipe.game)
         for url in [installRoot, prefix, wineBinary] { try validateLocalURL(url) }
@@ -137,6 +137,9 @@ public enum LaunchResolver {
         for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] { environment[key] = proxy }
         if settings.compatibilityPatches && recipe.timeoutFix { environment["WINE_ENABLE_TIMEOUT_FIX"] = "1" }
         if settings.metalHUD { environment["MTL_HUD_ENABLED"] = "1" }
+        // CrossOver's Mac driver rounds the game's Dock icon with ../../Resources/app-icon-roundrect-mask.png
+        // relative to this folder, and leaves the icon square without it. Other Wine builds ignore the variable.
+        if let crossOverRoot { environment["CX_ROOT"] = crossOverRoot.path }
 
         let dxmt = settings.backend == .dxmt, starRail = GameDefinition.find(recipe.game)?.family == .starrail
         switch settings.backend {
