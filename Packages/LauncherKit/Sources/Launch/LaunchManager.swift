@@ -34,6 +34,7 @@ public actor LaunchManager {
     private let displayProbe: any DisplayProbe
     private let proxyFactory: ProxyFactory
     private let baseEnvironment: [String: String]
+    private let crossOverRoot: URL?
     private let journalFileOps: any FileOps
     private let hideHooks: LaunchFileHooks
     private let beforeJournalRead: @Sendable () throws -> Void
@@ -83,7 +84,9 @@ public actor LaunchManager {
 
     public init(paths: AppPaths, runtimes: any LaunchRuntimeProviding, prefixes: any LaunchPrefixProviding,
         preparation: any LaunchPreparing, spawner: any ProcessSpawner, inspector: any ProcessInspector,
-        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = SystemDisplayProbe(), gameMode: (any GameModeProviding)? = nil) {
+        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = SystemDisplayProbe(), gameMode: (any GameModeProviding)? = nil,
+        crossOverRoot: URL? = nil) {
+        self.crossOverRoot = crossOverRoot
         self.gameMode = gameMode ?? GameModeHelper(paths: paths)
         self.eventLog = log ?? EventLog(directory: paths.logs)
         self.sessionLogWriter = Self.makeSessionLogWriter(beforeWrite: {})
@@ -108,6 +111,7 @@ public actor LaunchManager {
         sessionProvenance: @escaping @Sendable () throws -> (bootSessionUUID: String, sessionStartTime: UInt64) = LaunchManager.currentSessionProvenance,
         beforeSessionLogWrite: @escaping @Sendable () throws -> Void = {},
         fpsInjectorStatus: @escaping @Sendable (ProcessIdentity) throws -> SessionChildStatus = OwnedSessionChild.systemStatus) {
+        self.crossOverRoot = nil
         self.gameMode = gameMode
         self.eventLog = log ?? EventLog(directory: paths.logs)
         self.sessionLogWriter = Self.makeSessionLogWriter(beforeWrite: beforeSessionLogWrite)
@@ -353,7 +357,7 @@ public actor LaunchManager {
             let displays = displayProbe.connectedDisplays().map(\.id)
             let resolved = try LaunchResolver.resolve(recipe: recipe, settings: settings, installRoot: installRoot, prefix: prefix,
                 wineBinary: bundle.wineBinary, proxyPort: context.proxy!.port, componentRoots: selection.componentRoots, baseEnvironment: baseEnvironment, runtimeBundleID: selection.runtimeProfileID, displays: displays, gameModeRuntime: helper, gameModeEnabled: globalSettings.gameModeEnabled,
-                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged)
+                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged, crossOverRoot: crossOverRoot)
             context.fpsInjector = resolved.fpsInjector // Fresh launches only; reattachment never resolves a command.
             if !displays.isEmpty {
                 let selection = resolved.displayFallback ? "fallback" : (settings.display == nil ? "main" : "chosen")

@@ -119,6 +119,15 @@ private func resolve(_ game: String, settings: LaunchSettings? = nil, components
     else { #expect(!value.environment.keys.contains { $0.hasPrefix("D3DM_") }) }
 }
 
+@Test func crossOverRootIsOptIn() throws {
+    let recipe = try #require(Recipes.recipe(for: "zzz"))
+    let value = try LaunchResolver.resolve(recipe: recipe, settings: .defaults(for: "zzz"), installRoot: installRoot, prefix: prefix,
+        wineBinary: wine, proxyPort: 12345, componentRoots: roots, baseEnvironment: ["CX_ROOT": "bad"],
+        crossOverRoot: URL(fileURLWithPath: "/App/Contents/SharedSupport/CrossOver"))
+    #expect(value.environment["CX_ROOT"] == "/App/Contents/SharedSupport/CrossOver")
+    #expect(try resolve("zzz", base: ["CX_ROOT": "bad"]).environment["CX_ROOT"] == nil)
+}
+
 @Test(arguments: ["genshin", "starrail", "zzz"]) func missingRequiredComponentThrows(game: String) throws {
     let kind = game == "starrail" ? "jadeite" : "steamShim"
     #expect(throws: LauncherError.io("Missing required component: \(kind)")) { try resolve(game, components: [:]) }

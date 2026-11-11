@@ -86,6 +86,8 @@ public struct GameModeHelper: GameModeProviding {
         var link: String? = nil
         var data: Data? = nil
         var directory: Bool = false
+        /// The runtime file a `data` entry was derived from, for dependency checks.
+        var origin: SafeRelativePath? = nil
     }
     private struct Plan {
         let marker: Marker
@@ -135,7 +137,7 @@ public struct GameModeHelper: GameModeProviding {
                     else if let data = entry.data { try fs.writeAtomically(data, to: output) }
                 }
                 try fs.writeAtomically(JSONEncoder().encode(plan.marker), to: SafeRelativePath("\(incoming)/.macgacha-game-mode.json"))
-                // Shared executable inodes must never be re-signed or modified.
+                // Shared executable inodes must never be re-signed or modified; the icon patch is a separate file.
                 try fs.publishDirectory(at: incoming, to: destination)
                 try verify(helper, destination: destination, plan: plan, fs: fs)
                 try registration.register(destination.resolved(against: paths.root))
@@ -218,6 +220,12 @@ public struct GameModeHelper: GameModeProviding {
             guard !["wine-wrapper", "wine.real", "x86_64-unix", "x86_64-windows"].contains(name), entry.type != .directory else { throw LauncherError.io("Unsupported Game Mode Unix directory") }
             let override = name == "winecoreaudio.so" ? audio : nil
             let stockSource = entry.type == .regularFile ? try SafeRelativePath("\(source)/\(entry.path)") : nil
+            // A private copy that keeps the helper's rounded Dock icon; an unknown build keeps the stock link.
+            if name == WineMacIconPatch.module, let stockSource,
+                let patched = WineMacIconPatch.patched(try fs.readFile(at: stockSource, maxBytes: MachOLoadCommands.maximumFileBytes)) {
+                entries.append(Entry(path: try SafeRelativePath("Contents/MacOS/\(name)"), data: patched, origin: stockSource))
+                continue
+            }
             entries.append(Entry(path: try SafeRelativePath("Contents/MacOS/\(name)"),
                 source: override ?? stockSource,
                 link: override == nil ? entry.linkTarget.map { "../\(unix)/\($0)" } : nil))
@@ -264,7 +272,7 @@ public struct GameModeHelper: GameModeProviding {
             files: Dictionary(uniqueKeysWithValues: entries.compactMap { entry in entry.source.map { (entry.path.description, $0) } }))
         let validator = GameModeDependencies(runtime: runtime, mirror: mirror, sourceRoot: source.resolved(against: paths.root).path, fs: fs)
         for entry in entries where entry.path.components.dropLast() == ["Contents", "MacOS"][...] {
-            guard let file = entry.source else { continue }
+            guard let file = entry.source ?? entry.origin else { continue }
             let data = try fs.readFile(at: file, maxBytes: MachOLoadCommands.maximumFileBytes)
             for image in try MachOLoadCommands.images(in: data) {
                 try validator.validate(image, originalParent: file == audio ? ["lib", "wine", "x86_64-unix"] : Array(file.components.dropFirst(source.components.count).dropLast()),
