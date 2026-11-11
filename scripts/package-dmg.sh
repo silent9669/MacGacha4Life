@@ -42,13 +42,13 @@ scripts/check-app-loads.sh "$app"
 
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
-ditto "$app" "$staging/MacGacha.app"
+ditto "$app" "$staging/MG4L.app"
 ln -s /Applications "$staging/Applications"
 
 mkdir -p "$output_dir"
-dmg="$output_dir/MacGacha-$name.dmg"
+dmg="$output_dir/MacGacha4Life-$name.dmg"
 rm -f "$dmg"
-hdiutil create -volname "MacGacha $name" -srcfolder "$staging" -fs APFS -format ULFO -quiet "$dmg"
+hdiutil create -volname "MacGacha4Life $name" -srcfolder "$staging" -fs APFS -format ULFO -quiet "$dmg"
 hdiutil verify -quiet "$dmg"
-(cd "$output_dir" && shasum -a 256 "MacGacha-$name.dmg" > "MacGacha-$name.dmg.sha256")
+(cd "$output_dir" && shasum -a 256 "MacGacha4Life-$name.dmg" > "MacGacha4Life-$name.dmg.sha256")
 printf '%s\n' "$dmg"

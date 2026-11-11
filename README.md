@@ -25,12 +25,12 @@
 
 ## Install
 
-1. Download `MacGacha-<version>.dmg` from [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), open it and drag **MacGacha** to **Applications**.
+1. Download `MacGacha4Life-<version>.dmg` from [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), open it and drag **MG4L** to **Applications**.
 2. Open the app. macOS says it can't verify the developer, because MacGacha isn't notarized by Apple. Click **Done**, open **System Settings → Privacy & Security** and click **Open Anyway**.
 3. Still blocked? Run this in Terminal, then open the app again:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Needs an Apple Silicon Mac with macOS 27 or later. Rosetta 2 is offered on first launch if it's missing. Updates arrive through **Check for Updates…** in the app menu.

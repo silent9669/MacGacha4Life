@@ -28,12 +28,12 @@
 
 ## Installation
 
-1. Téléchargez `MacGacha-<version>.dmg` depuis [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), ouvrez-le et faites glisser **MacGacha** dans **Applications**.
+1. Téléchargez `MacGacha4Life-<version>.dmg` depuis [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), ouvrez-le et faites glisser **MG4L** dans **Applications**.
 2. Ouvrez l'app. macOS indique qu'il ne peut pas vérifier le développeur, car MacGacha n'est pas notarié par Apple. Cliquez sur **Terminé**, ouvrez **Réglages Système → Confidentialité et sécurité** puis cliquez sur **Ouvrir quand même**.
 3. Toujours bloquée ? Lancez ceci dans le Terminal, puis rouvrez l'app :
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Nécessite un Mac Apple Silicon sous macOS 27 ou plus récent. Rosetta 2 est proposé au premier lancement s'il manque. Les mises à jour passent par **Rechercher des mises à jour…** dans le menu de l'app.

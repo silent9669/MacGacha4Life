@@ -14,7 +14,7 @@ import unicodedata
 import xml.etree.ElementTree as ET
 
 SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-RELEASES = "https://github.com/deruta74/MacGacha/releases"
+RELEASES = "https://github.com/silent9669/MacGacha4Life/releases"
 MAX_NOTES_BYTES = 64 * 1024
 
 
@@ -91,7 +91,7 @@ def make_appcast(release: str, build: str, length: int, signature: str, publishe
     ET.SubElement(item, "description", {f"{{{SPARKLE}}}format": "markdown"}).text = notes
     ET.SubElement(item, f"{{{SPARKLE}}}fullReleaseNotesLink").text = RELEASES
     ET.SubElement(item, "enclosure", {
-        "url": f"{RELEASES}/download/v{release}/MacGacha-{release}.dmg",
+        "url": f"{RELEASES}/download/v{release}/MacGacha4Life-{release}.dmg",
         "length": str(length), "type": "application/octet-stream", f"{{{SPARKLE}}}edSignature": signature,
     })
     ET.indent(root)

@@ -28,12 +28,12 @@
 
 ## Установка
 
-1. Скачайте `MacGacha-<версия>.dmg` на странице [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), откройте его и перетащите **MacGacha** в **Программы**.
+1. Скачайте `MacGacha4Life-<версия>.dmg` на странице [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), откройте его и перетащите **MG4L** в **Программы**.
 2. Откройте приложение. macOS сообщит, что не может проверить разработчика: MacGacha не нотаризован Apple. Нажмите **Готово**, откройте **Системные настройки → Конфиденциальность и безопасность** и нажмите **Всё равно открыть**.
 3. Всё ещё блокируется? Выполните в Терминале и откройте приложение снова:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Нужен Mac с Apple Silicon и macOS 27 или новее. Если Rosetta 2 нет, её предложат установить при первом запуске. Обновления приходят через **Проверить обновления…** в меню приложения.

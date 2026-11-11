@@ -5,7 +5,7 @@ import SwiftUI
 /// MacGacha4Life uses the system's own look: native sidebar, Liquid Glass controls and system colors.
 /// This file only holds the app's name and project links.
 enum Brand {
-    static let appName = "MacGacha4Life"
+    static let appName = "MG4L"
     static let sourceURL = URL(string: "https://github.com/silent9669/MacGacha4Life")!
     static let originURL = URL(string: "https://github.com/deruta74/MacGacha")!
 }

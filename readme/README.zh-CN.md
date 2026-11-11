@@ -28,12 +28,12 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest) 下载 `MacGacha-<版本>.dmg`，打开后将 **MacGacha** 拖到**应用程序**。
+1. 从 [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest) 下载 `MacGacha4Life-<版本>.dmg`，打开后将 **MG4L** 拖到**应用程序**。
 2. 打开应用。macOS 会提示无法验证开发者，因为 MacGacha 未经 Apple 公证。点击**完成**，打开**系统设置 → 隐私与安全性**，点击**仍要打开**。
 3. 仍被拦截？在终端运行下面的命令，然后再打开应用：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 需要搭载 Apple Silicon 且系统为 macOS 27 或更高版本的 Mac。缺少 Rosetta 2 时，首次启动会提示安装。更新通过应用菜单中的**检查更新…**获取。

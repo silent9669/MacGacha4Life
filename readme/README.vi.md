@@ -26,12 +26,12 @@
 
 ## Cài đặt
 
-1. Tải `MacGacha-<phiên bản>.dmg` từ [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), mở ra và kéo **MacGacha** vào **Applications**.
+1. Tải `MacGacha4Life-<phiên bản>.dmg` từ [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), mở ra và kéo **MG4L** vào **Applications**.
 2. Mở ứng dụng. macOS báo không thể xác minh nhà phát triển vì MacGacha chưa được Apple công chứng. Nhấn **Xong**, mở **Cài đặt Hệ thống → Quyền riêng tư & Bảo mật** và nhấn **Vẫn mở**.
 3. Vẫn bị chặn? Chạy lệnh sau trong Terminal rồi mở lại ứng dụng:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Cần Mac Apple Silicon với macOS 27 trở lên. Nếu chưa có Rosetta 2, ứng dụng sẽ đề nghị cài khi mở lần đầu. Cập nhật qua **Kiểm tra cập nhật…** trong menu ứng dụng.
