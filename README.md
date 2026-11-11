@@ -13,9 +13,6 @@
 ![The launcher: sidebar, Zenless Zone Zero art and the Play bar](assets/screenshots/launcher.jpg)
 
 ![Home](assets/screenshots/home.jpg)
-
-> Built on [MacGacha](https://github.com/deruta74/MacGacha) by [deruta74](https://github.com/deruta74), whose launcher engine this project uses. Please star the [original project](https://github.com/deruta74/MacGacha).
-
 ## Features
 
 - **Home.** Every game as a card with one-click Play, your playtime, free disk space and the latest HoYoPlay events.
@@ -43,14 +40,14 @@ Found a bug or have an idea? [Open an issue](https://github.com/silent9669/MacGa
 
 ## Is it safe?
 
-Use at your own risk. To run under Wine, MacGacha uses community anti-cheat workarounds (jadeite, a Steam launcher shim) that may conflict with HoYoverse's Terms of Service, and a ban is possible. If you worry, try a new free-to-play account first. Features that change the game process, such as the Genshin Impact frame-rate unlock, are off by default and warn you before you turn them on. MacGacha downloads games only from HoYoverse's official servers, verifies every file and never asks for your password.
+Use at your own risk. To run under Wine, MacGacha4Life uses community anti-cheat workarounds (jadeite, a Steam launcher shim) that may conflict with HoYoverse's Terms of Service, and a ban is possible. If you worry, try a new free-to-play account first. Features that change the game process, such as the Genshin Impact frame-rate unlock, are off by default and warn you before you turn them on. MacGacha4Life downloads games only from HoYoverse's official servers, verifies every file and never asks for your password.
 
 MacGacha4Life is unofficial and not affiliated with HoYoverse (COGNOSPHERE) or Apple Inc. Game names and trademarks belong to their owners. Code and documentation here may be written with the help of AI agents. The software is provided as is, without warranty.
 
 ## Credits
 
-[deruta74/MacGacha](https://github.com/deruta74/MacGacha) ❤️ · [Wine](https://www.winehq.org) and CodeWeavers · [DXMT](https://github.com/3Shain/dxmt) by 3Shain · [jadeite](https://codeberg.org/mkrsym1/jadeite) by mkrsym1 · [genshin-fps-unlock](https://github.com/34736384/genshin-fps-unlock) by 34736384 (MIT), whose method the frame-rate unlock uses · Valve's Proton, source of the Steam shim · dbc-hbin for the Wine 11.20 + D3DMetal builds · an-anime-team and Michael Nelson for the Mainland China crash fix · Apple for D3DMetal and the Game Porting Toolkit, under Apple's terms, which the app asks you to accept.
+[deruta74/MacGacha](https://github.com/deruta74/MacGacha) · [Wine](https://www.winehq.org) and CodeWeavers · [DXMT](https://github.com/3Shain/dxmt) by 3Shain · [jadeite](https://codeberg.org/mkrsym1/jadeite) by mkrsym1 · [genshin-fps-unlock](https://github.com/34736384/genshin-fps-unlock) by 34736384 (MIT), whose method the frame-rate unlock uses · Valve's Proton, source of the Steam shim · dbc-hbin for the Wine 11.20 + D3DMetal builds · an-anime-team and Michael Nelson for the Mainland China crash fix · Apple for D3DMetal and the Game Porting Toolkit, under Apple's terms, which the app asks you to accept.
 
 ## License
 
-Copyright (C) 2026 deruta74 and silent9669. Free software under the [GNU General Public License v3.0](LICENSE) with one additional term under section 7(b) (see [NOTICE](NOTICE)): every distributed copy and work based on MacGacha must keep the link to https://github.com/deruta74/MacGacha in its source and About screen. Any distributed version must stay under GPL-3.0 with its source available. Components the app downloads at runtime, and the games, have their own licenses.
+Copyright (C) 2026 silent9669. Free software under the [GNU General Public License v3.0](LICENSE) with one additional term under section 7(b) (see [NOTICE](NOTICE)): every distributed copy and work based on MacGacha4Life must keep the link to [https://github.com/silent9669/MacGacha4Life](https://github.com/silent9669/MacGacha4Life) in its source and About screen. Any distributed version must stay under GPL-3.0 with its source available. Components the app downloads at runtime, and the games, have their own licenses.
