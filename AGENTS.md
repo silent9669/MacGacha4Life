@@ -17,7 +17,7 @@ MacGacha is a native macOS launcher for Genshin Impact, Honkai: Star Rail and Ze
 - **Requirements:** macOS 27, Apple Silicon. SwiftUI, Swift 6 language mode, strict concurrency.
 - **License:** GPL-3.0-only, with an extra term under section 7(b): keep the link to the original project. See `NOTICE`.
 
-The README is short on purpose: features, install, help, safety, credits and license. Keep the six translations in `readme/` (`README.ru.md`, `README.uk.md`, `README.de.md`, `README.fr.md`, `README.zh-CN.md`, `README.ja.md`) in sync with the root English `README.md`, including the language badges, relative links and the screenshots. `scripts/` has no generator; edit all seven files together.
+The README is short on purpose: features, install, help, safety, credits and license. Keep the seven translations in `readme/` (`README.ru.md`, `README.uk.md`, `README.de.md`, `README.fr.md`, `README.zh-CN.md`, `README.ja.md`, `README.vi.md`) in sync with the root English `README.md`, including the language badges, relative links and the screenshots. `scripts/` has no generator; edit all eight files together.
 
 ## Repository layout
 
