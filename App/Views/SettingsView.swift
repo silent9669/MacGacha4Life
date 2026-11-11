@@ -153,14 +153,8 @@ private struct AboutCard: View {
             Text(version)
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
-            Text("Based on MacGacha by deruta74")
+            Link(destination: Brand.sourceURL) { Label(String("silent9669/MacGacha4Life"), systemImage: "chevron.left.forwardslash.chevron.right") }
                 .font(.callout)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 16) {
-                Link(destination: Brand.sourceURL) { Label(String("silent9669/MacGacha4Life"), systemImage: "chevron.left.forwardslash.chevron.right") }
-                Link(destination: Brand.originURL) { Label(String("deruta74/MacGacha"), systemImage: "heart.fill") }
-            }
-            .font(.callout)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)

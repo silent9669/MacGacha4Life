@@ -7,7 +7,6 @@ import SwiftUI
 enum Brand {
     static let appName = "MG4L"
     static let sourceURL = URL(string: "https://github.com/silent9669/MacGacha4Life")!
-    static let originURL = URL(string: "https://github.com/deruta74/MacGacha")!
 }
 
 extension View {

@@ -329,7 +329,7 @@ final class AppModel {
         }
         let stored = defaults?.string(forKey: "installRoot")
         self.installRoot = stored.flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0, isDirectory: true) : nil }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Games/MacGacha", isDirectory: true)
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Games/MG4L", isDirectory: true)
         rebuildRows()
         revalidateGameEvents()
         observeGameActivation()

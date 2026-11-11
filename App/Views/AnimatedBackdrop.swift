@@ -44,7 +44,8 @@ struct AnimatedBackdrop: NSViewRepresentable {
         var onState: (@MainActor (BackdropVideoState) -> Void)?
     }
 
-    /// A layer-hosting view whose layer is the player's display layer, filling like the stills.
+    /// A layer-hosting view for the player's display layer. It fills like the stills: scaled to cover, anchored
+    /// to the top so a game's logo stays in view when the window is short. HoYoPlay's videos are 16:9.
     final class VideoLayerView: NSView {
         let displayLayer = AVSampleBufferDisplayLayer()
 
@@ -52,8 +53,26 @@ struct AnimatedBackdrop: NSViewRepresentable {
             super.init(frame: frame)
             displayLayer.videoGravity = .resizeAspectFill
             displayLayer.backgroundColor = NSColor.clear.cgColor
-            layer = displayLayer
+            let host = CALayer()
+            host.masksToBounds = true
+            host.addSublayer(displayLayer)
+            layer = host
             wantsLayer = true
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            needsLayout = true
+        }
+
+        override func layout() {
+            super.layout()
+            let scale = max(bounds.width / 16, bounds.height / 9)
+            let size = CGSize(width: 16 * scale, height: 9 * scale)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            displayLayer.frame = CGRect(x: (bounds.width - size.width) / 2, y: bounds.height - size.height, width: size.width, height: size.height)
+            CATransaction.commit()
         }
 
         @available(*, unavailable)
@@ -125,7 +144,7 @@ struct GameBackdrop: View {
 
     private func fill(_ image: NSImage) -> some View {
         Color.clear
-            .overlay {
+            .overlay(alignment: .top) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
