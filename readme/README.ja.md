@@ -9,6 +9,7 @@
 [![Français](https://img.shields.io/badge/Fran%C3%A7ais-555555?style=for-the-badge)](README.fr.md)
 [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555?style=for-the-badge)](README.zh-CN.md)
 [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-0078D4?style=for-the-badge)](README.ja.md)
+[![Tiếng Việt](https://img.shields.io/badge/Ti%E1%BA%BFng_Vi%E1%BB%87t-555555?style=for-the-badge)](README.vi.md)
 
 ![ランチャー：サイドバー、ゼンレスゾーンゼロのアートと Play バー](../assets/screenshots/launcher.jpg)
 
@@ -27,12 +28,12 @@
 
 ## インストール
 
-1. [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest) から `MacGacha-<バージョン>.dmg` をダウンロードして開き、**MacGacha** を**アプリケーション**にドラッグします。
+1. [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest) から `MacGacha4Life-<バージョン>.dmg` をダウンロードして開き、**MG4L** を**アプリケーション**にドラッグします。
 2. アプリを開きます。MacGacha は Apple の公証を受けていないため、macOS は開発元を確認できないと表示します。**完了**をクリックし、**システム設定 → プライバシーとセキュリティ**を開いて**このまま開く**をクリックします。
 3. それでもブロックされる場合は、ターミナルで次を実行してからアプリを開き直してください：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Apple Silicon の Mac と macOS 27 以降が必要です。Rosetta 2 がない場合は初回起動時にインストールを案内します。アップデートはアプリメニューの**アップデートを確認…**から届きます。

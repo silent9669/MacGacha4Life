@@ -19,7 +19,7 @@ struct MacGachaApp: App {
     }
 
     var body: some Scene {
-        Window("MacGacha4Life", id: "launcher") {
+        Window(Brand.appName, id: "launcher") {
             LauncherWindowContent()
                 .environment(model)
                 // Startup belongs to the window, not to the launcher view the loading screen replaces.

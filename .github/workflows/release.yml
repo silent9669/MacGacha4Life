@@ -95,14 +95,14 @@ jobs:
           trap 'rm -f "$key_file"' EXIT
           printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$key_file"
           unset SPARKLE_ED_PRIVATE_KEY
-          if ! signature=$("$signer" --ed-key-file "$key_file" -p "out/MacGacha-$VERSION.dmg" 2>/dev/null); then
+          if ! signature=$("$signer" --ed-key-file "$key_file" -p "out/MacGacha4Life-$VERSION.dmg" 2>/dev/null); then
             echo "error: Sparkle could not sign the update" >&2
             exit 1
           fi
           public_key=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$MACGACHA_DERIVED_DATA_PATH/Build/Products/Release/MacGacha.app/Contents/Info.plist")
-          xcrun swift -warnings-as-errors scripts/verify-sparkle-signature.swift "out/MacGacha-$VERSION.dmg" "$public_key" "$signature"
+          xcrun swift -warnings-as-errors scripts/verify-sparkle-signature.swift "out/MacGacha4Life-$VERSION.dmg" "$public_key" "$signature"
           python3 -I scripts/make-appcast.py --release "$VERSION" --build-number "$MACGACHA_BUILD_NUMBER" \
-            --dmg "out/MacGacha-$VERSION.dmg" --signature "$signature" --notes "$RELEASE_NOTES" --output out/appcast.xml
+            --dmg "out/MacGacha4Life-$VERSION.dmg" --signature "$signature" --notes "$RELEASE_NOTES" --output out/appcast.xml
           python3 -I -c 'import xml.etree.ElementTree as ET; ET.parse("out/appcast.xml")'
 
       - name: Publish the release
@@ -112,7 +112,7 @@ jobs:
           RELEASE_NOTES: ${{ steps.version.outputs.notes }}
         run: |
           set -euo pipefail
-          assets=("out/MacGacha-$VERSION.dmg" "out/MacGacha-$VERSION.dmg.sha256")
+          assets=("out/MacGacha4Life-$VERSION.dmg" "out/MacGacha4Life-$VERSION.dmg.sha256")
           [[ -f out/appcast.xml ]] && assets+=(out/appcast.xml)
           gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --latest \
             --title "MacGacha4Life $VERSION" --target "$SHA" --notes-file "$RELEASE_NOTES" "${assets[@]}"

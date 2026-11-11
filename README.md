@@ -9,6 +9,7 @@
 [![Français](https://img.shields.io/badge/Fran%C3%A7ais-555555?style=for-the-badge)](readme/README.fr.md)
 [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555?style=for-the-badge)](readme/README.zh-CN.md)
 [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-555555?style=for-the-badge)](readme/README.ja.md)
+[![Tiếng Việt](https://img.shields.io/badge/Ti%E1%BA%BFng_Vi%E1%BB%87t-555555?style=for-the-badge)](readme/README.vi.md)
 
 ![The launcher: sidebar, Zenless Zone Zero art and the Play bar](assets/screenshots/launcher.jpg)
 
@@ -24,12 +25,12 @@
 
 ## Install
 
-1. Download `MacGacha-<version>.dmg` from [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), open it and drag **MacGacha** to **Applications**.
+1. Download `MacGacha4Life-<version>.dmg` from [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), open it and drag **MG4L** to **Applications**.
 2. Open the app. macOS says it can't verify the developer, because MacGacha isn't notarized by Apple. Click **Done**, open **System Settings → Privacy & Security** and click **Open Anyway**.
 3. Still blocked? Run this in Terminal, then open the app again:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Needs an Apple Silicon Mac with macOS 27 or later. Rosetta 2 is offered on first launch if it's missing. Updates arrive through **Check for Updates…** in the app menu.

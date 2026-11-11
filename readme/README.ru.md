@@ -9,6 +9,7 @@
 [![Français](https://img.shields.io/badge/Fran%C3%A7ais-555555?style=for-the-badge)](README.fr.md)
 [![简体中文](https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-555555?style=for-the-badge)](README.zh-CN.md)
 [![日本語](https://img.shields.io/badge/%E6%97%A5%E6%9C%AC%E8%AA%9E-555555?style=for-the-badge)](README.ja.md)
+[![Tiếng Việt](https://img.shields.io/badge/Ti%E1%BA%BFng_Vi%E1%BB%87t-555555?style=for-the-badge)](README.vi.md)
 
 ![Лаунчер: боковая панель, арт Zenless Zone Zero и панель Play](../assets/screenshots/launcher.jpg)
 
@@ -27,12 +28,12 @@
 
 ## Установка
 
-1. Скачайте `MacGacha-<версия>.dmg` на странице [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), откройте его и перетащите **MacGacha** в **Программы**.
+1. Скачайте `MacGacha4Life-<версия>.dmg` на странице [Releases](https://github.com/silent9669/MacGacha4Life/releases/latest), откройте его и перетащите **MG4L** в **Программы**.
 2. Откройте приложение. macOS сообщит, что не может проверить разработчика: MacGacha не нотаризован Apple. Нажмите **Готово**, откройте **Системные настройки → Конфиденциальность и безопасность** и нажмите **Всё равно открыть**.
 3. Всё ещё блокируется? Выполните в Терминале и откройте приложение снова:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/MacGacha.app
+xattr -dr com.apple.quarantine /Applications/MG4L.app
 ```
 
 Нужен Mac с Apple Silicon и macOS 27 или новее. Если Rosetta 2 нет, её предложат установить при первом запуске. Обновления приходят через **Проверить обновления…** в меню приложения.
