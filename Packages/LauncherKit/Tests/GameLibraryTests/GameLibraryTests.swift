@@ -772,6 +772,19 @@ import TestSupport
         try f.assertFiles(1)
     }
 
+    @Test func movedFolderIsUnavailableUntilRelocated() async throws {
+        let f = try LibraryFixture(); try f.advertise(1)
+        _ = try await libraryCollect(await f.library.install(game, voices: [], at: f.install, approved: true))
+        let moved = f.base.appendingPathComponent("moved"), other = f.base.appendingPathComponent("other")
+        try FileManager.default.moveItem(at: f.install, to: moved)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: false)
+        #expect(await f.library.status(game) == .locationUnavailable(f.install))
+        await #expect(throws: LauncherError.io("not the game's folder")) { try await f.library.relocate(game, to: other) }
+        try await f.library.relocate(game, to: moved)
+        #expect(await f.library.status(game) == .installed(tag: "1.0"))
+        #expect(try await f.store.load(game.id)?.installPath.path == moved.standardizedFileURL.path)
+    }
+
     @Test func engineRefusesReplacementAfterPendingSave() async throws {
         let f = try LibraryFixture(); try f.advertise(1)
         let root = f.install, moved = f.base.appendingPathComponent("moved")

@@ -228,7 +228,7 @@ struct GameFooter: View {
         case .paused:
             return state.spaceShortage == nil ? String(localized: "Paused") : String(localized: "Paused — Not enough free disk space")
         case .uninstallPaused: return String(localized: "Uninstall didn't finish")
-        case .locationUnavailable: return String(localized: "Install location unavailable — connect the drive it's on")
+        case .locationUnavailable: return String(localized: "Game folder not found — connect its drive or locate it")
         }
     }
 
@@ -343,6 +343,7 @@ struct GameFooter: View {
 
 /// The footer's big button. `PrimaryAction` decides what it is; this decides how it looks.
 struct PrimaryActionButton: View {
+    @State private var locating = false
     @Environment(AppModel.self) private var model
     let game: LauncherGame
     let action: PrimaryAction
@@ -390,8 +391,12 @@ struct PrimaryActionButton: View {
         case .needsRosetta:
             prominent("Install Rosetta…", alwaysEnabled: true) { gameSheet = .rosetta(game.id) }
         case .locationUnavailable:
-            waiting("Location Unavailable")
+            prominent("Locate…", alwaysEnabled: true) { locating = true }
                 .help(unavailablePath)
+                .fileImporter(isPresented: $locating, allowedContentTypes: [.folder]) { result in
+                    guard case .success(let folder) = result else { return }
+                    Task { await model.relocateGame(game.id, to: folder) }
+                }
         case .play:
             prominent("Play", alwaysEnabled: true) { model.play(game.id) }
                 .disabled(playingElsewhere)
