@@ -37,6 +37,8 @@ public actor GameEventsService {
     private static let responseLimit = 2 << 20
     private static let indexLimit = 1 << 20
     public static let postLimit = 20
+    /// Events, announcements and news. Genshin Impact and Zenless Zone Zero often publish no activity posts at all.
+    private static let shownTypes: Set<String> = ["POST_TYPE_ACTIVITY", "POST_TYPE_ANNOUNCE", "POST_TYPE_INFO"]
     public static let titleLimit = 512 // Unicode scalars, at most 2048 UTF-8 bytes.
     private let directory: URL
     private let region: Region
@@ -160,7 +162,7 @@ public actor GameEventsService {
     private static func parse(_ data: Data) throws -> [GameEvent] {
         let response = try JSONDecoder().decode(EventsEnvelope<EventsContent>.self, from: data)
         guard response.retcode == 0, response.data.content.posts.count <= 256 else { throw LauncherError.io("Invalid events response") }
-        return try response.data.content.posts.lazy.filter { $0.type == "POST_TYPE_ACTIVITY" }.prefix(postLimit).map {
+        return try response.data.content.posts.lazy.filter { Self.shownTypes.contains($0.type) }.prefix(postLimit).map {
             guard $0.date.unicodeScalars.count <= 128 else { throw LauncherError.io("Invalid events date length") }
             return GameEvent(title: String($0.title.unicodeScalars.prefix(titleLimit)),
                 date: $0.date, link: $0.link.flatMap(browserLink))

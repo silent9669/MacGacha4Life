@@ -74,6 +74,17 @@ import TestSupport
         #expect(service.cached().isEmpty) // A future fetch time is untrusted too.
     }
 
+    @Test func announcementsAndNewsShowWhenAGameHasNoActivityPosts() async throws {
+        let temp = try TempDir(), http = EventsHTTP()
+        http.content = content([
+            ["type": "POST_TYPE_ANNOUNCE", "title": "Update details", "date": "11/04", "link": "https://external.example/a"],
+            ["type": "POST_TYPE_INFO", "title": "Events overview", "date": "11/02", "link": "https://external.example/b"],
+            ["type": "POST_TYPE_NOTICE", "title": "Hidden", "date": "11/01", "link": "https://external.example/c"],
+        ])
+        let result = await GameEventsService(cacheDirectory: temp.url.appendingPathComponent("Events"), http: http, now: { eventsFixtureDate }).refresh()
+        #expect(result["genshin"]?.posts.map(\.title) == ["Update details", "Events overview"])
+    }
+
     @Test(arguments: ["", "http://example.test", "javascript:alert(1)", "file:///tmp/a", "//example.test", "https://user:secret@example.test", "https://"])
     func invalidLinksStayVisibleButNotClickable(link: String) async throws {
         let temp = try TempDir(), http = EventsHTTP()

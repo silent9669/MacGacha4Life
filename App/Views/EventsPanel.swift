@@ -4,17 +4,23 @@ import AppKit
 import HoYoPlayAPI
 import SwiftUI
 
-/// HoYoPlay's events for the game: each title with its date, opening the post in the browser.
-struct EventsList: View {
-    let events: [GameEvent]
-    /// HoYoPlay shows a short list; the rest are a click away on the game's site.
-    private static let visible = 3
+/// The newest posts of every game in the rail, each row with its game's icon. Posts have no stable id,
+/// and titles can repeat, so rows are keyed by position.
+struct LatestEventsCard: View {
+    @Environment(AppModel.self) private var model
+
+    private var items: [(game: LauncherGame, event: GameEvent)] {
+        model.visibleGames.flatMap { game in (model.gameEvents[game.id] ?? []).prefix(2).map { (game, $0) } }
+    }
 
     var body: some View {
-        // Posts have no stable id, and titles can repeat, so rows are keyed by position.
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(events.prefix(Self.visible).enumerated()), id: \.offset) { _, event in
-                EventRow(event: event)
+        if !items.isEmpty {
+            Card("Events") {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                        EventRow(event: item.event, icon: model.gameArt[item.game.id]?.icon)
+                    }
+                }
             }
         }
     }

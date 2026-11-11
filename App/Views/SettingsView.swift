@@ -12,8 +12,27 @@ struct SettingsView: View {
     @State private var language = InterfaceLanguageSettings()
 
     var body: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") { general }
+            Tab("Games", systemImage: "gamecontroller") { games }
+            Tab("Updates", systemImage: "arrow.triangle.2.circlepath") { updates }
+            Tab("About", systemImage: "info.circle") { AboutCard() }
+        }
+        .scenePadding()
+        .frame(width: 540)
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { model.setInstallRoot(url) }
+        }
+    }
+
+    private func note(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private var general: some View {
         Form {
-            Section { AboutCard() }
             Section {
                 Picker("Language", selection: Binding(get: { language.selection }, set: { language.select($0) })) {
                     Text(InterfaceLanguageSettings.systemName).tag(InterfaceLanguage?.none)
@@ -26,46 +45,32 @@ struct SettingsView: View {
                     LanguageRestartRow()
                 }
             } footer: {
-                Text("System follows the language order in macOS. HoYoPlay's art and events follow the interface language where HoYoPlay offers it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                note("System follows the language order in macOS. HoYoPlay's art and events follow the interface language where HoYoPlay offers it.")
             }
             .onAppear { language.reload() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in language.reload() }
-            Section {
-                Picker("Region", selection: Binding(get: { model.region }, set: { model.region = $0 })) {
-                    Text("Global").tag(Region.global)
-                    Text("Mainland China (Beta)").tag(Region.mainlandChina)
-                }
-            } footer: {
-                Text("Shows the games for this region's servers. A download or game in the other region keeps going when you switch. Mainland China is in beta: signing in hasn't been tested yet.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle("Automatically check for updates", isOn: Binding(
-                    get: { model.automaticallyChecksForUpdates },
-                    set: { model.automaticallyChecksForUpdates = $0 }
-                ))
-                HStack {
-                    Spacer()
-                    Button("Check Now") { model.checkForUpdates() }
-                        .disabled(!model.canCheckForUpdates)
-                }
-            } footer: {
-                Text("MacGacha4Life asks before it downloads an update and waits until no game or download is running to install it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
             Section {
                 Toggle("Animated backgrounds", isOn: Binding(
                     get: { animatedBackgrounds },
                     set: { animatedBackgrounds = $0; animatedChosen = true }
                 ))
             } footer: {
-                Text("Plays the game's animated art when HoYoPlay provides it. Still images use less power.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                note("Plays the game's animated art when HoYoPlay provides it. Still images use less power.")
+            }
+        }
+        .formStyle(.grouped)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var games: some View {
+        Form {
+            Section {
+                Picker("Region", selection: Binding(get: { model.region }, set: { model.region = $0 })) {
+                    Text("Global").tag(Region.global)
+                    Text("Mainland China (Beta)").tag(Region.mainlandChina)
+                }
+            } footer: {
+                note("Shows the games for this region's servers. A download or game in the other region keeps going when you switch. Mainland China is in beta: signing in hasn't been tested yet.")
             }
             Section {
                 Toggle("Game Mode for games", isOn: Binding(
@@ -73,9 +78,7 @@ struct SettingsView: View {
                     set: { model.gameModeEnabled = $0 }
                 ))
             } footer: {
-                Text("macOS gives a full-screen game priority on the CPU and GPU and lowers latency for AirPods and controllers. Takes effect the next time you play.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                note("macOS gives a full-screen game priority on the CPU and GPU and lowers latency for AirPods and controllers. Takes effect the next time you play.")
             }
             Section {
                 Toggle("Save session logs", isOn: Binding(
@@ -83,9 +86,7 @@ struct SettingsView: View {
                     set: { model.sessionLogsEnabled = $0 }
                 ))
             } footer: {
-                Text("Logs of what the game and Wine print while you play. They stay on this Mac and help with bug reports. When off, MacGacha4Life keeps only what it needs to put game files back.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                note("Logs of what the game and Wine print while you play. They stay on this Mac and help with bug reports. When off, MacGacha4Life keeps only what it needs to put game files back.")
             }
             Section {
                 LabeledContent("Install games in") {
@@ -107,17 +108,31 @@ struct SettingsView: View {
                     Button("Choose…") { choosing = true }
                 }
             } footer: {
-                Text("Games need a lot of space. Pick a drive with at least 100 GB free.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                note("Games need a lot of space. Pick a drive with at least 100 GB free.")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
-        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { model.setInstallRoot(url) }
+    }
+
+    private var updates: some View {
+        Form {
+            Section {
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { model.automaticallyChecksForUpdates },
+                    set: { model.automaticallyChecksForUpdates = $0 }
+                ))
+                HStack {
+                    Spacer()
+                    Button("Check Now") { model.checkForUpdates() }
+                        .disabled(!model.canCheckForUpdates)
+                }
+            } footer: {
+                note("MacGacha4Life asks before it downloads an update and waits until no game or download is running to install it.")
+            }
         }
+        .formStyle(.grouped)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -128,29 +143,27 @@ private struct AboutCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
+        VStack(spacing: 10) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 64, height: 64)
+                .frame(width: 96, height: 96)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: Brand.appName)
-                    .font(.title2.weight(.bold))
-                Text(version)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Text("Based on MacGacha by deruta74")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    Link(destination: Brand.sourceURL) { Label(String("silent9669/MacGacha4Life"), systemImage: "chevron.left.forwardslash.chevron.right") }
-                    Link(destination: Brand.originURL) { Label(String("deruta74/MacGacha"), systemImage: "heart.fill") }
-                }
-                .font(.caption)
+            Text(verbatim: Brand.appName)
+                .font(.title.weight(.bold))
+            Text(version)
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+            Text("Based on MacGacha by deruta74")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 16) {
+                Link(destination: Brand.sourceURL) { Label(String("silent9669/MacGacha4Life"), systemImage: "chevron.left.forwardslash.chevron.right") }
+                Link(destination: Brand.originURL) { Label(String("deruta74/MacGacha"), systemImage: "heart.fill") }
             }
-            Spacer(minLength: 0)
+            .font(.callout)
         }
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
     }
 }
 

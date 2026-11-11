@@ -44,8 +44,10 @@ struct RootView: View {
     @State private var pageWidth: CGFloat = 1000
     @State private var pageHeight: CGFloat = 700
     private var compact: Bool { pageWidth < 900 }
-    /// The hero leaves a strip of the cards below it in view, so the page reads as scrollable.
-    private var heroHeight: CGFloat { max(380, min(pageHeight - 96, pageWidth * 0.56)) }
+    /// The cards under the hero report their height, and the art takes the rest, so a game's page fits the window
+    /// without scrolling. Small windows keep a minimum art height and scroll.
+    @State private var detailsHeight: CGFloat = 270
+    private var heroHeight: CGFloat { max(300, pageHeight - detailsHeight - 48) }
 
     /// Games playing right now, for playtime.
     private var liveGames: Set<String> {
@@ -95,8 +97,7 @@ struct RootView: View {
     }
 
     private func footer(_ part: GameFooter.Part) -> some View {
-        GameFooter(game: game, art: model.gameArt[game.id], highlights: shownSlide?.highlights,
-            images: images, gameSheet: $gameSheet, animated: animated, part: part)
+        GameFooter(game: game, art: model.gameArt[game.id], gameSheet: $gameSheet, animated: animated, part: part)
             // A fresh footer per game, so a confirmation opened for one game can't act on another.
             .id(game.id)
     }
@@ -106,7 +107,8 @@ struct RootView: View {
         ScrollView {
             VStack(spacing: 24) {
                 hero.frame(height: heroHeight)
-                GameDetails(game: game, gameSheet: $gameSheet)
+                GameDetails(game: game, gameSheet: $gameSheet, highlights: shownSlide?.highlights, images: images)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailsHeight = $0 }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
             }
@@ -158,7 +160,7 @@ struct RootView: View {
         switch page {
         case .home: HomeView(page: $page)
         case .game: gamePage
-        case .tool(.dependencies): NavigationStack { DependenciesView() }
+        case .tool(.dependencies): NavigationStack { DependenciesView { gameSheet = .setup($0) } }
         case .tool(.support): NavigationStack { SupportView(game: game) { gameSheet = .settings(game.id) } }
         case .tool(.diagnostics): NavigationStack { DiagnosticsView() }
         }

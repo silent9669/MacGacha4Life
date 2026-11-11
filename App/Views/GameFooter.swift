@@ -27,8 +27,6 @@ struct GameFooter: View {
     @Environment(AppModel.self) private var model
     let game: LauncherGame
     let art: GameArt?
-    let highlights: GameHighlights?
-    let images: ArtImageCache
     @Binding var gameSheet: GameSheet?
     @Binding var animated: Bool
     @State private var confirmingParts = false
@@ -50,12 +48,7 @@ struct GameFooter: View {
     var body: some View {
         switch part {
         case .highlights:
-            VStack(alignment: .leading, spacing: 16) {
-                title
-                if let highlights {
-                    HighlightsButton(highlights: highlights, images: images)
-                }
-            }
+            title
         case .actions:
             actions
         }

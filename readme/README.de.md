@@ -21,6 +21,7 @@
 
 - **Start.** Jedes Spiel als Karte mit Play per Klick, deine Spielzeit, freier Speicher und die neuesten HoYoPlay-Events.
 - **Eine Seite pro Spiel.** Randlose Artworks, eine gläserne Aktionsleiste und Karten für Grafik, Framelimit, Leistungs-Overlay, Spielzeit und Größe auf dem Datenträger.
+- **Lastabschätzung.** Ein grüner, gelber oder roter Punkt neben jeder Einstellung zeigt, wie stark sie deinen Mac fordert.
 - **Alles verwaltet.** Installation, Updates, Reparatur und Sprachpakete von den offiziellen HoYoverse-Servern, dazu Wine, DXMT und D3DMetal. Downloads lassen sich pausieren.
 - **Hilfe & Leistung.** Probleme eines Spiels im Web suchen, bekannte Probleme lesen, Fehler mit Systeminfos melden und die Einstellungen prüfen, die die Geschwindigkeit beeinflussen.
 - **Quick Play in der Menüleiste.** Während du spielst, zeigt der Launcher Standbilder und nimmt dem Spiel keine GPU-Leistung weg.

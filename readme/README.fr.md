@@ -21,6 +21,7 @@
 
 - **Accueil.** Chaque jeu en carte avec Play en un clic, votre temps de jeu, l'espace libre et les derniers événements HoYoPlay.
 - **Une page par jeu.** Visuel plein cadre, barre d'action en verre et cartes pour le graphisme, la limite d'images, la superposition de performances, le temps de jeu et la taille sur le disque.
+- **Estimation de la charge.** Un point vert, jaune ou rouge à côté de chaque réglage indique à quel point il sollicite votre Mac.
 - **Tout est géré.** Installation, mises à jour, réparation et voix depuis les serveurs officiels de HoYoverse, plus Wine, DXMT et D3DMetal. Les téléchargements se mettent en pause.
 - **Aide et performances.** Cherchez les problèmes d'un jeu sur le web, lisez les problèmes connus, signalez un bug avec les infos système et vérifiez les réglages qui influent sur la vitesse.
 - **Quick Play dans la barre des menus.** Pendant que vous jouez, le lanceur affiche des images fixes et ne prend pas de GPU au jeu.
