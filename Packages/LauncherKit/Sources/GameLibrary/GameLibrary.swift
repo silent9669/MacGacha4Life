@@ -1,0 +1,524 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import Dispatch
+import Foundation
+import LauncherCore
+import DownloadEngine
+import Sophon
+
+public enum GameStatus: Sendable, Equatable {
+    case unknown, notInstalled, installed(tag: String), updateAvailable(from: String, to: String)
+    case paused(PendingOperation.Kind), uninstallPaused, locationUnavailable(URL)
+}
+public struct GameEstimate: Sendable, Equatable {
+    public let download: Int64
+    public let diskWhole: Int64
+    public let diskMinimum: Int64
+    public let available: Int64?
+    /// Advisory only: capacity held by macOS, excluded from `available`.
+    public let purgeable: Int64?
+    public init(download: Int64, diskWhole: Int64, diskMinimum: Int64, available: Int64?, purgeable: Int64? = nil) {
+        self.download = download; self.diskWhole = diskWhole; self.diskMinimum = diskMinimum; self.available = available
+        self.purgeable = purgeable
+    }
+}
+
+/// Application policy for live sessions and unfinished launch recovery. Called
+/// before an operation takes a lease or changes any persistent game state.
+public protocol GameOperationGuard: Sendable {
+    func willOperate(on game: String) async throws
+}
+
+public actor GameLibrary {
+    // Synchronous filesystem/cache work must not occupy a cooperative worker.
+    nonisolated private let ioQueue = DispatchSerialQueue(label: "org.macgacha.game-library")
+    public nonisolated var unownedExecutor: UnownedSerialExecutor { ioQueue.asUnownedSerialExecutor() }
+
+    private let paths: AppPaths
+    let api: DeliveryAPI
+    let runner: OperationRunner
+    let store: GameRecordStore
+    let disk: any DiskSpaceProbe
+    private let purgeable: any PurgeableSpaceProbe
+    let log: EventLog?
+    let operationGuard: (any GameOperationGuard)?
+    let hooks: CrashHooks
+    let fileOps: any FileOps
+    private var started = false
+    private static let cleanupName = "uninstall-cleaned.json"
+
+    /// Join a cancelled pipeline before reading its final record or relaunching.
+    /// Taking the lease also refuses an unrelated active operation.
+    public func waitUntilIdle(_ id: String) async throws {
+        _ = try SafeIdentifier(id)
+        try await store.waitForPipelineDrain()
+        let lease = try await store.acquireOperationLease()
+        withExtendedLifetime(lease) {}
+    }
+
+    /// Join cache readers after its stream has completed, failed or been
+    /// discarded. This is separate from claiming the global mutation lease.
+    public func waitForPreDownloadDrain(_ id: String) async throws {
+        _ = try SafeIdentifier(id)
+        try await store.waitForPipelineDrain()
+    }
+
+    public init(paths: AppPaths, api: DeliveryAPI, runner: OperationRunner, store: GameRecordStore,
+        disk: any DiskSpaceProbe, log: EventLog?, crashHooks: CrashHooks = .none, fileOps: any FileOps = SystemFileOps(), purgeable: any PurgeableSpaceProbe = SystemPurgeableSpaceProbe(), guard operationGuard: (any GameOperationGuard)? = nil) {
+        self.paths = paths; self.api = api; self.runner = runner; self.store = store
+        self.operationGuard = operationGuard
+        self.disk = disk; self.purgeable = purgeable; self.log = log; hooks = crashHooks; self.fileOps = fileOps
+    }
+
+    public func start() async {
+        guard !started else { return }; started = true
+        do {
+            for id in try await store.gameDirectories().sorted() {
+                guard !Task.isCancelled else { return }
+                do {
+                    try await operationGuard?.willOperate(on: id)
+                    try await store.waitForPipelineDrain()
+                    let gameLock = try acquireGameLock(id)
+                    defer { withExtendedLifetime(gameLock) {} }
+                    _ = try await runner.reconcile(id)
+                }
+                catch { await log?.log(.error, "game-library", "Reconciliation failed", metadata: ["game": id]) }
+            }
+        } catch { await log?.log(.error, "game-library", "Record discovery failed") }
+    }
+
+    public func status(_ game: GameDefinition) async -> GameStatus {
+        (try? await readStatus(game, fresh: false)) ?? .unknown
+    }
+
+    /// Manual checks must surface request failures instead of treating a saved
+    /// branch as a successful fresh read. DeliveryAPI reads the current branch
+    /// directly; its HTTP client ignores the local URL cache. No build is needed.
+    public func checkForUpdate(_ game: GameDefinition) async throws -> GameStatus {
+        try await readStatus(game, fresh: true)
+    }
+
+    private func readStatus(_ game: GameDefinition, fresh: Bool) async throws -> GameStatus {
+        guard let record = try await store.load(game.id) else { return .notInstalled }
+        do { try requireGameLocationAvailable(record.installPath) }
+        catch { return .locationUnavailable(record.installPath) }
+        if record.uninstalling { return .uninstallPaused }
+        if let pending = record.pending { return .paused(pending.kind) }
+        guard let installed = record.installed else { return .unknown }
+        let latest: GameBranch?
+        if fresh { latest = try await branch(game, cachedFallback: false) }
+        else { latest = try? await branch(game, cachedFallback: true) }
+        if let latest, latest.tag != installed.tag { return .updateAvailable(from: installed.tag, to: latest.tag) }
+        return .installed(tag: installed.tag)
+    }
+
+    public func estimate(_ game: GameDefinition, voices: Set<String>, at location: URL) async throws -> GameEstimate {
+        // Estimates only read operation state. Metadata caches are atomic and
+        // verified on read, so they do not require the exclusive operation lease.
+        let records = try await store.records()
+        try GameRecordRules.check(.install, record: records[game.id], others: others(records, game))
+        try checkNewLocation(location, records: records, game: game, empty: true)
+        let target = try await resolve(game, voices: voices)
+        let id = try planID(game, kind: .install, build: target.build, categories: target.categories)
+        let plan = try SophonPlanner.fullPlan(id: id, target: target.categories)
+        let fs = try ContainedFileSystem(root: location)
+        let whole = try SpaceBudget.required(plan: plan, state: JournalState(), fs: fs)
+        let minimum = try SpaceBudget.minimumBatchedPreflight(plan: plan, state: JournalState(), fs: fs)
+        let available = try? disk.availableBytes(at: location)
+        let probe = purgeable
+        let important = try? await BlockingIO.run { probe.importantUsageBytes(at: location) }
+        // Both capacities are nonnegative; clamp injected/unsupported values too.
+        let held = available.flatMap { free in important.map { max(0, max(0, $0) - max(0, free)) } }
+        return GameEstimate(download: whole.network, diskWhole: whole.disk,
+            diskMinimum: minimum,
+            available: available, purgeable: held)
+    }
+
+    public func install(_ game: GameDefinition, voices: Set<String>, at location: URL, approved: Bool) -> AsyncThrowingStream<OperationEvent, any Error> {
+        stream(game, .install(voices, location, approved))
+    }
+    public func adopt(_ game: GameDefinition, folder: URL, voices: Set<String>) -> AsyncThrowingStream<OperationEvent, any Error> {
+        stream(game, .adopt(voices, folder))
+    }
+    public func update(_ game: GameDefinition, approved: Bool) -> AsyncThrowingStream<OperationEvent, any Error> { stream(game, .update(approved)) }
+    public func resume(_ game: GameDefinition, approved: Bool) -> AsyncThrowingStream<OperationEvent, any Error> { stream(game, .resume(approved)) }
+    public func verify(_ game: GameDefinition, mode: Verifier.Mode) -> AsyncThrowingStream<OperationEvent, any Error> { stream(game, .verify(mode)) }
+    public func setVoices(_ game: GameDefinition, _ voices: Set<String>) -> AsyncThrowingStream<OperationEvent, any Error> { stream(game, .voices(voices)) }
+
+    public func uninstall(_ game: GameDefinition) async throws {
+        try await operationGuard?.willOperate(on: game.id)
+        let gameLock = try acquireGameLock(game.id)
+        let lease = try await store.acquireOperationLease(retainedGameLock: gameLock); defer { withExtendedLifetime(lease) {} }
+        let records = try await store.records()
+        try GameRecordRules.check(.uninstall, record: records[game.id], others: others(records, game))
+        guard var record = records[game.id] else { throw LauncherError.io("game is not installed") }
+        if !record.uninstallFilesRemoved {
+            try requireGameLocationAvailable(record.installPath)
+            try checkLocation(record.installPath, records: records, game: game)
+            let fs: ContainedFileSystem?
+            do { fs = try ContainedFileSystem(root: record.installPath, fileOps: fileOps).pinRootIfPresent() }
+            catch LauncherError.unsafePath { throw LauncherError.io("install folder was replaced") }
+            if let fs {
+                guard try fs.rootIdentity() == record.installIdentity else { throw LauncherError.io("install folder was replaced") }
+            } else if !record.uninstalling { throw LauncherError.io("install folder was replaced") }
+            record.uninstalling = true
+            try await store.save(record, for: game.id) // 1. Persist intent before removal.
+            try checkLocation(record.installPath, records: records, game: game)
+            if let fs {
+                if record.ownership == .created {
+                    try fs.removePinnedRoot(onlyIfEmpty: false)
+                } else {
+                    let managed = try await store.managedPaths(for: game.id, record: record)
+                    var skipped = 0
+                    for path in managed.sorted(by: { $0.components.count > $1.components.count }) {
+                        guard !Task.isCancelled else { throw LauncherError.cancelled }
+                        do {
+                            if let type = try fs.itemType(at: path) {
+                                if type == .regularFile { try fs.removeFile(at: path) }
+                                else { skipped += 1 }
+                            }
+                        } catch LauncherError.unsafePath { skipped += 1 }
+                    }
+                    if skipped > 0 { await log?.log(.info, "game-library", "Managed paths left untouched", metadata: ["count": String(skipped)]) }
+                    for name in [".macgacha-staging", ".macgacha-receipts", ".macgacha-predownload"] { try fs.removeItem(at: SafeRelativePath(name)) }
+                    try fs.removeFile(at: SafeRelativePath(".macgacha-state.json"))
+                    try fs.pruneEmptyDirectories()
+                    try fs.removePinnedRoot(onlyIfEmpty: true)
+                }
+            }
+            // Keep the cleanup phase in the last-to-be-deleted record. It remains
+            // authoritative even after every side file has been retired.
+            record.uninstallFilesRemoved = true
+            try await store.save(record, for: game.id)
+        }
+        hooks.reach(.afterGameFolderRemoved)
+        try await store.deletePlan(for: game.id) // 4. Record outlives every side file.
+        hooks.reach(.afterUninstallPlanDeleted)
+        try await store.deleteManifestCache(for: game.id)
+        hooks.reach(.afterUninstallManifestCacheDeleted)
+        try await store.deleteState("branch.json", for: game.id)
+        hooks.reach(.afterUninstallBranchDeleted)
+        try await store.deleteState("managed-paths.json", for: game.id)
+        hooks.reach(.afterUninstallManagedPathsDeleted)
+        try await store.deleteState(Self.cleanupName, for: game.id)
+        hooks.reach(.afterUninstallCleanupDeleted)
+        hooks.reach(.beforeGameRecordDeleted)
+        try await store.delete(game.id)
+        hooks.reach(.afterUninstallRecordDeleted)
+        try await store.deleteGameDirectory(game.id)
+    }
+
+    func acquireGameLock(_ game: String) throws -> InstallLock {
+        let id = try SafeIdentifier(game)
+        let fs = try ContainedFileSystem(root: paths.root, fileOps: fileOps)
+        try fs.createRootDurably()
+        try fs.createDirectoryDurably(at: SafeRelativePath("Games/\(id.rawValue)"))
+        let lock = try InstallLock(fs: fs, path: SafeRelativePath("Games/\(id.rawValue)/.session.lock"))
+        // A different launcher may have launched and died after our guard await.
+        // Revalidate durable ownership while no launcher can acquire this game.
+        try LaunchMutationBarrier.requireNoJournal(paths: paths, game: game)
+        return lock
+    }
+
+    private func stream(_ game: GameDefinition, _ request: LibraryRequest) -> AsyncThrowingStream<OperationEvent, any Error> {
+        let session = LibrarySession(owner: self, game: game, request: request)
+        return AsyncThrowingStream(unfolding: { try await session.next() })
+    }
+
+    fileprivate func prepare(_ game: GameDefinition, request: LibraryRequest) async throws -> LibraryPrepared {
+        try await operationGuard?.willOperate(on: game.id)
+        let resumes = if case .resume = request { true } else { false }
+        // A cancelled pipeline retains both locks until it drains. Resume joins
+        // that drainage before trying the per-game lock, rather than failing busy.
+        if resumes { try await store.waitForPipelineDrain() }
+        let gameLock = try acquireGameLock(game.id)
+        let lease = try await store.acquireOperationLease(retainedGameLock: gameLock)
+        let records = try await store.records(); let record = records[game.id]
+        try GameRecordRules.check(request.action, record: record, others: others(records, game))
+        if let record { try requireGameLocationAvailable(record.installPath) }
+        switch request {
+        case .resume(let approved):
+            return LibraryPrepared(lease: lease, stream: await runner.resume(game.id, approved: approved, lease: lease))
+        case .install(let voices, let location, let approved):
+            try checkNewLocation(location, records: records, game: game, empty: true)
+            try await store.deleteState(Self.cleanupName, for: game.id)
+            let config = try await api.config(biz: game.biz), target = try await resolve(game, voices: voices)
+            let plan = try SophonPlanner.fullPlan(id: planID(game, kind: .install, build: target.build, categories: target.categories), target: target.categories)
+            return LibraryPrepared(lease: lease, stream: await runner.startInstall(game.id, at: location, executable: config.executable, plan: plan,
+                target: target.build, approved: approved, lease: lease, managedPaths: target.managedPaths,
+                reservedLocations: [paths.root, paths.runtimes]))
+        case .adopt(let voices, let location):
+            try checkNewLocation(location, records: records, game: game, empty: false)
+            let source = try ContainedFileSystem(root: location).pinRoot()
+            try AdoptEditionValidator.validate(game, in: source)
+            let identity = try source.rootIdentity()
+            try await store.deleteState(Self.cleanupName, for: game.id)
+            let config = try await api.config(biz: game.biz), target = try await resolve(game, voices: voices)
+            let record = GameRecord(installPath: location, ownership: .adopted, executable: config.executable, installIdentity: identity)
+            return LibraryPrepared(lease: lease, stream: verification { progress in
+                try await self.verifyAndRun(game, record: record, target: target, kind: .adopt, mode: .full, lease: lease, progress: progress)
+            })
+        case .verify(let mode):
+            guard let record, let installed = record.installed else { throw LauncherError.io("game is not installed") }
+            let target = LibraryTarget(build: installed, categories: try await planned(installed.categories, game: game))
+            return LibraryPrepared(lease: lease, stream: verification { progress in
+                try await self.verifyAndRun(game, record: record, target: target, kind: .repair, mode: mode, lease: lease, progress: progress)
+            })
+        case .update(let approved):
+            guard let record, let installed = record.installed else { throw LauncherError.io("game is not installed") }
+            let target = try await resolve(game, voices: installed.voices)
+            return try await updateStream(game, record: record, installed: installed, target: target, kind: .update, approved: approved, lease: lease)
+        case .voices(let voices):
+            guard let record, let installed = record.installed else { throw LauncherError.io("game is not installed") }
+            let target: LibraryTarget
+            if voices.isSubset(of: installed.voices) {
+                let known = Set(game.voices.map(\.code))
+                let selected = installed.categories.filter { !known.contains($0.matchingField) || voices.contains($0.matchingField) }
+                target = LibraryTarget(build: InstalledBuild(tag: installed.tag, buildID: installed.buildID, categories: selected, voices: voices),
+                    categories: try await planned(selected, game: game))
+            } else {
+                target = try await resolve(game, voices: voices, tag: installed.tag)
+                guard target.build.buildID == installed.buildID, target.build.tag == installed.tag else { throw LauncherError.io("installed build unavailable") }
+            }
+            return try await updateStream(game, record: record, installed: installed, target: target, kind: .voices, approved: false, lease: lease)
+        }
+    }
+
+    private func updateStream(_ game: GameDefinition, record: GameRecord, installed: InstalledBuild, target: LibraryTarget,
+        kind: PendingOperation.Kind, approved: Bool, lease: GameOperationLease) async throws -> LibraryPrepared {
+        let snapshot = InstalledSnapshot(categories: try await planned(installed.categories, game: game))
+        let id = try planID(game, kind: kind, build: target.build, categories: target.categories)
+        var requiresPatchMetadata = false
+        if kind == .update {
+            let cache = try PreDownloadStore(fs: ContainedFileSystem(root: record.installPath, fileOps: fileOps, expectedRootIdentity: record.installIdentity))
+            if let saved = try cache.load() {
+                requiresPatchMetadata = saved.plan.edition == game.id && saved.plan.sourceTag == installed.tag && saved.plan.targetTag == target.build.tag
+            }
+        }
+        let patch = kind == .update ? try await patchPlan(game, id: id, target: target, installed: installed, snapshot: snapshot,
+            requiresPatchMetadata: requiresPatchMetadata) : nil
+        let plan = try patch ?? SophonPlanner.plan(id: id, target: target.categories, installed: snapshot)
+        return LibraryPrepared(lease: lease, stream: await runner.start(game.id, record: record, plan: plan, kind: kind,
+            target: target.build, approved: approved, lease: lease, managedPaths: target.managedPaths,
+                reservedLocations: [paths.root, paths.runtimes]))
+    }
+
+    private func patchPlan(_ game: GameDefinition, id: SafeIdentifier, target: LibraryTarget,
+        installed: InstalledBuild, snapshot: InstalledSnapshot, requiresPatchMetadata: Bool) async throws -> InstallPlan? {
+        guard let branch = target.branch else {
+            if requiresPatchMetadata { throw LauncherError.transport("Update metadata unavailable") }
+            return nil
+        }
+        if !branch.diffTags.contains(installed.tag), !requiresPatchMetadata { return nil }
+        do {
+            guard try await api.config(biz: game.biz).enableLdiff else { return nil }
+            guard branch.diffTags.contains(installed.tag) else { throw LauncherError.io("patch source unavailable") }
+            let build = try await api.patchBuild(branch)
+            guard build.tag == target.build.tag, build.buildID == target.build.buildID else {
+                throw LauncherError.io("patch target changed")
+            }
+            var available: [String: PatchBuildCategory] = [:]
+            for category in build.categories {
+                guard available.updateValue(category, forKey: category.id) == nil else { throw LauncherError.io("duplicate patch category") }
+            }
+            var selected: [PlannedPatchCategory] = []
+            for full in target.categories {
+                guard let category = available[full.category.id], category.matchingField == full.category.matchingField else {
+                    throw LauncherError.io("missing patch category")
+                }
+                let manifest = try await api.patchManifest(category).manifest
+                selected.append(PlannedPatchCategory(category: category, manifest: manifest))
+            }
+            try Task.checkCancellation()
+            return try SophonPlanner.patchPlan(id: id, target: target.categories, patch: selected, installed: snapshot, sourceTag: installed.tag)
+        } catch {
+            if Task.isCancelled || error is CancellationError || (error as? LauncherError) == .cancelled { throw LauncherError.cancelled }
+            // A matching cache represents an explicit patch transfer. Do not
+            // silently replace it with a much larger chunk update on an outage.
+            if requiresPatchMetadata { throw LauncherError.transport("Update metadata unavailable") }
+            // Discovery is optional. Only a fully validated patch plan can
+            // replace the existing chunk route; resume never enters this path.
+            return nil
+        }
+    }
+
+    private func verifyAndRun(_ game: GameDefinition, record: GameRecord, target: LibraryTarget, kind: PendingOperation.Kind,
+        mode: Verifier.Mode, lease: GameOperationLease, progress: @escaping @Sendable (OperationEvent) -> Void) async throws -> AsyncThrowingStream<OperationEvent, any Error> {
+        let full = try SophonPlanner.fullPlan(id: planID(game, kind: kind, build: target.build, categories: target.categories), target: target.categories)
+        if kind == .adopt, !full.files.contains(where: { $0.path == record.executable }),
+            try ContainedFileSystem(root: record.installPath).itemType(at: record.executable) != .regularFile {
+            throw LauncherError.io("game executable missing")
+        }
+        // Exactly the selected manifest entries are inspected. Quick mode only
+        // checks metadata and must not claim that any file bytes were read.
+        let total = try full.files.reduce(Int64(0)) { total, file in
+            let (sum, overflow) = total.addingReportingOverflow(file.size)
+            guard !overflow else { throw LauncherError.io("verification byte count overflow") }
+            return sum
+        }
+        let bytes = mode == .full && total > 0 ? VerificationByteProgress(total: total, publish: progress) : nil
+        bytes?.flush()
+        let report = try await Verifier().verify(fs: ContainedFileSystem(root: record.installPath, expectedRootIdentity: record.installIdentity),
+            files: full.files.map(ManifestFile.init), mode: mode, progress: { bytes?.advance($0) })
+        bytes?.flush()
+        try Task.checkCancellation()
+        if report.isClean, kind == .repair {
+            return AsyncThrowingStream { continuation in continuation.yield(.phase(.completed)); continuation.finish() }
+        }
+        let id = try planID(game, kind: kind, build: target.build, categories: target.categories, repaired: Array(report.problems.keys))
+        let plan = try repairPlan(from: report, plan: full, id: id)
+        return await runner.start(game.id, record: record, plan: plan, kind: kind, target: target.build, approved: false, lease: lease, managedPaths: target.managedPaths,
+            reservedLocations: [paths.root, paths.runtimes])
+    }
+
+    private func resolve(_ game: GameDefinition, voices: Set<String>, tag: String? = nil) async throws -> LibraryTarget {
+        let branch = try await branch(game, cachedFallback: false)
+        let build = try await api.build(branch, tag: tag)
+        let selected = try SophonPlanner.selectCategories(branch, build: build, voices: voices)
+        return LibraryTarget(build: InstalledBuild(tag: build.tag, buildID: build.buildID, categories: selected, voices: voices),
+            categories: try await planned(selected, game: game), branch: branch)
+    }
+
+    private func branch(_ game: GameDefinition, cachedFallback: Bool) async throws -> GameBranch {
+        let value: GameBranch
+        do {
+            value = try await api.branch(biz: game.biz)
+        } catch {
+            if Task.isCancelled { throw LauncherError.cancelled }
+            if cachedFallback, let data = try? await store.readState("branch.json", for: game.id, maxBytes: 2 << 20),
+                let value = try? JSONDecoder().decode(GameBranch.self, from: data), value.biz == game.biz { return value }
+            throw error
+        }
+        do {
+            try await store.writeCacheState(JSONEncoder().encode(value), named: "branch.json", for: game.id)
+        } catch {
+            try await cacheFailure(error, game: game, kind: "branch", action: "write")
+        }
+        return value
+    }
+
+    private func planned(_ categories: [BuildCategory], game: GameDefinition) async throws -> [PlannedCategory] {
+        let cache: ContainedFileSystem?
+        do {
+            cache = try ContainedFileSystem(root: await store.manifestCache(for: game.id), fileOps: fileOps)
+        } catch {
+            try await cacheFailure(error, game: game, kind: "manifest", action: "open")
+            cache = nil
+        }
+        var result: [PlannedCategory] = []
+        for category in categories {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            let name: String
+            if let safe = try? SafeIdentifier(category.manifest.id) { name = safe.rawValue }
+            else {
+                // Delivery IDs are opaque (including separators); cache only a
+                // stable leaf, never a path supplied by delivery metadata.
+                var hash = StreamingHasher(.sha256); hash.update(Data(category.manifest.id.utf8))
+                // Percent is valid in SafeRelativePath but forbidden in SafeIdentifier,
+                // keeping opaque IDs disjoint from normal manifest filenames.
+                name = "%sha256-" + hash.finalize().hex
+            }
+            let path = try SafeRelativePath("\(name).zst")
+            if let cache {
+                do {
+                    if try cache.itemType(at: path) != nil {
+                        let bytes = try cache.readFile(at: path, maxBytes: Int(category.manifest.compressedSize))
+                        let manifest = try DeliveryAPI.decodeManifest(bytes, ref: category.manifest)
+                        result.append(PlannedCategory(category: category, manifest: manifest)); continue
+                    }
+                } catch {
+                    try await cacheFailure(error, game: game, kind: "manifest", action: "read")
+                    // A bad cache is disposable; failure to remove it must not
+                    // prevent a verified network response from being used.
+                    try? cache.removeFile(at: path)
+                }
+            }
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            let fetched = try await api.manifest(category)
+            if let cache {
+                do {
+                    try cache.writeCacheAtomically(fetched.compressed, to: path)
+                } catch {
+                    try await cacheFailure(error, game: game, kind: "manifest", action: "write")
+                }
+            }
+            result.append(PlannedCategory(category: category, manifest: fetched.manifest))
+        }
+        return result
+    }
+
+    private func cacheFailure(_ error: any Error, game: GameDefinition, kind: String, action: String) async throws {
+        if Task.isCancelled || error is CancellationError || (error as? LauncherError) == .cancelled {
+            throw LauncherError.cancelled
+        }
+        // Cache errors can carry paths, URLs or selectors. Log only fixed fields.
+        await log?.log(.warning, "game-library", "Metadata cache unavailable",
+            metadata: ["game": game.id, "cache": kind, "action": action])
+    }
+
+    private func checkNewLocation(_ location: URL, records: [String: GameRecord], game: GameDefinition, empty: Bool) throws {
+        try requireGameLocationAvailable(location)
+        try checkLocation(location, records: records, game: game)
+        if empty { try GameRecordRules.checkInstallFolder(location) }
+    }
+    private func checkLocation(_ location: URL, records: [String: GameRecord], game: GameDefinition) throws {
+        try GameRecordRules.checkLocation(location, others: others(records, game), reserved: [paths.root, paths.runtimes])
+    }
+    private func others(_ records: [String: GameRecord], _ game: GameDefinition) -> [GameRecord] { records.filter { $0.key != game.id }.map(\.value) }
+
+}
+
+private struct LibraryTarget: Sendable {
+    let build: InstalledBuild
+    let categories: [PlannedCategory]
+    let branch: GameBranch?
+    init(build: InstalledBuild, categories: [PlannedCategory], branch: GameBranch? = nil) {
+        self.build = build; self.categories = categories; self.branch = branch
+    }
+    var managedPaths: Set<SafeRelativePath> { Set(categories.flatMap { $0.manifest.files.map(\.path) }) }
+}
+fileprivate struct LibraryPrepared: Sendable { let lease: GameOperationLease; let stream: AsyncThrowingStream<OperationEvent, any Error> }
+fileprivate enum LibraryRequest: Sendable {
+    case install(Set<String>, URL, Bool), adopt(Set<String>, URL), update(Bool), resume(Bool), verify(Verifier.Mode), voices(Set<String>)
+    var action: GameAction {
+        switch self { case .install: .install; case .adopt: .adopt; case .update: .update; case .resume: .resume; case .verify: .repair; case .voices: .voices }
+    }
+}
+private actor LibrarySession {
+    let owner: GameLibrary; let game: GameDefinition; let request: LibraryRequest
+    var lease: GameOperationLease?
+    var iterator: AsyncThrowingStream<OperationEvent, any Error>.Iterator?
+    var prepared = false, done = false, pulling = false
+    init(owner: GameLibrary, game: GameDefinition, request: LibraryRequest) { self.owner = owner; self.game = game; self.request = request }
+    func next() async throws -> OperationEvent? {
+        guard !pulling else { throw LauncherError.busy("game stream already in use") }
+        pulling = true; defer { pulling = false }
+        if done { return nil }
+        do {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if !prepared {
+                let value = try await owner.prepare(game, request: request)
+                lease = value.lease; iterator = value.stream.makeAsyncIterator(); prepared = true
+            }
+            guard var current = iterator else { throw LauncherError.io("missing library stream") }
+            iterator = nil; let event = try await current.next(isolation: self); iterator = current
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if event == nil || event == .phase(.completed) { done = true; iterator = nil; lease = nil }
+            return event
+        } catch { done = true; iterator = nil; lease = nil; throw error }
+    }
+}
+private func planID(_ game: GameDefinition, kind: PendingOperation.Kind, build: InstalledBuild,
+    categories: [PlannedCategory], repaired: [SafeRelativePath] = []) throws -> SafeIdentifier {
+    let ids = categories.map(\.category.id).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+    let paths = repaired.map(\.description).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    var hash = StreamingHasher(.sha256); hash.update(try encoder.encode(["categories": ids, "paths": paths]))
+    let suffix = hash.finalize().hex.prefix(12)
+    let candidate = "\(game.id)-\(kind.rawValue)-\(build.buildID)-\(suffix)"
+    if let safe = try? SafeIdentifier(candidate) { return safe }
+    // Delivery build IDs are opaque. Preserve ordinary IDs, but represent an
+    // unsafe or overlong ID by a stable digest within the bounded identifier.
+    var buildHash = StreamingHasher(.sha256); buildHash.update(Data(build.buildID.utf8))
+    return try SafeIdentifier("\(game.id)-\(kind.rawValue)-sha256-\(buildHash.finalize().hex)-\(suffix)")
+}

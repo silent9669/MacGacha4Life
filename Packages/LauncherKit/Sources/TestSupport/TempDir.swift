@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import Foundation
+
+public struct TempDir: ~Copyable {
+    public let url: URL
+
+    public init() throws {
+        url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: url)
+    }
+}

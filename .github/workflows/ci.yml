@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore: ['**/*.md', 'assets/**', 'readme/**']
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md', 'assets/**', 'readme/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# A fast Linux job answers the cheap questions first. The three macOS jobs run in
+# parallel and each builds what it needs from a clean checkout.
+jobs:
+  quick-checks:
+    name: Quick checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check license headers
+        run: scripts/check-headers.sh
+
+      - name: Check appcast generator and the newest release notes
+        run: |
+          python3 -I scripts/make-appcast.py --self-check
+          version=$(sed -n 's/^ *MARKETING_VERSION: *//p' project.yml | head -1)
+          python3 -I scripts/make-appcast.py --check-notes "ReleaseNotes/$version.md"
+
+      - name: Validate runtime catalog publication
+        run: |
+          python3 -I scripts/test-runtime-catalog.py
+          python3 -I scripts/check-runtime-catalog.py RuntimeCatalog/runtime-catalog.json
+
+  package-tests:
+    name: Package tests
+    needs: quick-checks
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Check the update signature verifier
+        run: xcrun swift -warnings-as-errors scripts/verify-sparkle-signature.swift --self-check
+
+      - name: Run native surround tests
+        # Exercises the native audio regression without downloading or running Wine.
+        run: python3 -I scripts/test-surround-audio.py
+
+      - name: Run package tests
+        # One retry: a few socket tests depend on loopback timing on shared runners.
+        # A test that fails twice still fails the job.
+        run: |
+          mkdir -p test-results
+          for attempt in 1 2; do
+            if python3 scripts/test-package.py --events test-results/package-events.jsonl \
+              --parallel --xunit-output test-results/test-results.xml; then
+              exit 0
+            fi
+            echo "::warning::package tests failed on attempt $attempt"
+          done
+          exit 1
+
+      # Scale tests hold the only cooperative thread for tens of seconds and
+      # starve timed tests; they already run in the step above.
+      - name: Run engine tests with one cooperative worker
+        timeout-minutes: 5
+        env:
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
+        run: |
+          python3 scripts/test-package.py --events test-results/strict-engine-events.jsonl \
+            --timeout-seconds 240 --skip-build --test-product DownloadEngineTests \
+            --skip PlanScaleTests --skip operationStagesOneThousandBatchesWithLinearWork \
+            --parallel --num-workers 2 --xunit-output test-results/strict-engine.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-test-results-${{ github.sha }}
+          path: |
+            test-results/*.xml
+            test-results/*.jsonl
+            test-results/*.sample-*.txt
+
+  app-tests:
+    name: App tests and strings
+    needs: quick-checks
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: scripts/bootstrap.sh
+
+      - name: Run app unit tests
+        run: >-
+          xcodebuild
+          -project MacGacha.xcodeproj
+          -scheme MacGacha
+          -configuration Debug
+          -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath .build/xcode
+          -resultBundlePath test-results/MacGachaTests.xcresult
+          CODE_SIGN_IDENTITY=-
+          test
+
+      - name: Check string catalog
+        run: python3 scripts/check-strings.py .build/xcode
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-test-results-${{ github.sha }}
+          path: test-results/*.xcresult
+
+  release-build:
+    name: Release build
+    needs: quick-checks
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: scripts/bootstrap.sh
+
+      - name: Build app
+        run: >-
+          xcodebuild
+          -project MacGacha.xcodeproj
+          -scheme MacGacha
+          -configuration Release
+          -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath .build/xcode
+          CODE_SIGN_IDENTITY=-
+          build
+
+      - name: Check that the app can load its frameworks
+        run: scripts/check-app-loads.sh .build/xcode/Build/Products/Release/MacGacha.app
+
+      - name: Archive app
+        run: ditto -c -k --keepParent .build/xcode/Build/Products/Release/MacGacha.app MacGacha4Life.zip
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MacGacha4Life-${{ github.sha }}
+          path: MacGacha4Life.zip
+          retention-days: 14
+
+  # One result for branch protection and for people: green only when every job is.
+  ci-result:
+    name: CI result
+    if: always()
+    needs: [quick-checks, package-tests, app-tests, release-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize
+        run: |
+          echo "### CI" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ join(needs.*.result, ', ') }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            exit 1
+          fi

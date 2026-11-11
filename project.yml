@@ -1,0 +1,137 @@
+name: MacGacha
+options:
+  developmentLanguage: en
+  deploymentTarget:
+    macOS: "27.0"
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
+  LauncherKit:
+    path: Packages/LauncherKit
+settings:
+  base:
+    # Neither app exposes App Intents; no metadata extraction is needed.
+    LM_SKIP_METADATA_EXTRACTION: YES
+targets:
+  MacGacha:
+    type: application
+    platform: macOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: App
+        excludes: [Resources]
+      - path: App/Resources
+        buildPhase: resources
+      - path: THIRD_PARTY_NOTICES
+        buildPhase: resources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+      - target: Rosetta Prompt
+        embed: true
+        link: false
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+      - package: LauncherKit
+        product: LauncherCore
+      - package: LauncherKit
+        product: DownloadEngine
+      - package: LauncherKit
+        product: Diagnostics
+      - package: LauncherKit
+        product: HoYoPlayAPI
+      - package: LauncherKit
+        product: BackdropVideo
+      - package: LauncherKit
+        product: Sophon
+      - package: LauncherKit
+        product: GameLibrary
+      - package: LauncherKit
+        product: Launch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lo7ted.macgacha
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ARCHS: arm64
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: App/MacGacha.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
+        # Sparkle Ed25519 public key. The private key is the SPARKLE_ED_PRIVATE_KEY secret.
+        SPARKLE_PUBLIC_ED_KEY: "twDFIWAvlw1lBPC12GhgVqHMvPTpgYCUstqhuVJ/vPg="
+        INFOPLIST_KEY_CFBundleDisplayName: MacGacha4Life
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 silent9669. Based on MacGacha by deruta74. GPL-3.0."
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 1
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        # New user-facing strings land in App/Resources/Localizable.xcstrings at build time.
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+  Rosetta Prompt:
+    type: application
+    platform: macOS
+    # This deliberately Intel-only prompt stub needs no macOS 27 APIs.
+    deploymentTarget: "13.0"
+    sources:
+      - path: RosettaPrompt
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lo7ted.macgacha.rosetta-prompt
+        PRODUCT_NAME: Rosetta Prompt
+        ARCHS: x86_64
+        ONLY_ACTIVE_ARCH: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_ENTITLEMENTS: RosettaPrompt/RosettaPrompt.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Rosetta Prompt
+        INFOPLIST_KEY_LSUIElement: YES
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+  MacGachaTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: MacGachaTests
+    dependencies:
+      - target: MacGacha
+      - package: LauncherKit
+        product: LauncherCore
+      - package: LauncherKit
+        product: DownloadEngine
+      - package: LauncherKit
+        product: Diagnostics
+      - package: LauncherKit
+        product: HoYoPlayAPI
+      - package: LauncherKit
+        product: Sophon
+      - package: LauncherKit
+        product: GameLibrary
+      - package: LauncherKit
+        product: Launch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lo7ted.macgacha.tests
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+schemes:
+  MacGacha:
+    build:
+      targets:
+        MacGacha: all
+    test:
+      targets:
+        - MacGachaTests

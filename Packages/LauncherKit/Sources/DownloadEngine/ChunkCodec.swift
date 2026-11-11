@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+
+import Darwin
+import Foundation
+import LauncherCore
+
+public enum ChunkCodec: String, Codable, Sendable, CaseIterable {
+    case identity, zstd
+
+    public static var supportedCodecs: Set<ChunkCodec> {
+        Set(allCases.filter { (try? $0.decoder()) != nil })
+    }
+
+    public func decoder(fileOps: any FileOps = SystemFileOps()) throws -> any ChunkDecoder {
+        switch self {
+        case .identity: return IdentityDecoder(fileOps: fileOps)
+        case .zstd: return ZstdDecoder(fileOps: fileOps)
+        }
+    }
+}
+
+public protocol ChunkDecoder: Sendable {
+    /// Borrows caller-owned handles, reading the object from offset zero without reopening a path.
+    func decode(_ transferred: FileHandle, expectedSize: Int64, into: FileHandle, at offset: Int64) throws
+}
+
+public struct IdentityDecoder: ChunkDecoder {
+    private let fileOps: any FileOps
+    public init(fileOps: any FileOps = SystemFileOps()) { self.fileOps = fileOps }
+
+    public func decode(_ transferred: FileHandle, expectedSize: Int64, into output: FileHandle, at offset: Int64) throws {
+        guard expectedSize >= 0, offset >= 0,
+              !offset.addingReportingOverflow(expectedSize).overflow else { throw LauncherError.io("Invalid decode range") }
+        guard !Task.isCancelled else { throw LauncherError.cancelled }
+        var inputInfo = stat()
+        var outputInfo = stat()
+        guard fstat(transferred.fileDescriptor, &inputInfo) == 0, inputInfo.st_mode & S_IFMT == S_IFREG,
+              fstat(output.fileDescriptor, &outputInfo) == 0, outputInfo.st_mode & S_IFMT == S_IFREG,
+              inputInfo.st_dev != outputInfo.st_dev || inputInfo.st_ino != outputInfo.st_ino else {
+            throw LauncherError.io("Decoder requires distinct regular files")
+        }
+        guard inputInfo.st_size == expectedSize else {
+            throw LauncherError.sizeMismatch(path: "transferred object", expected: expectedSize, actual: inputInfo.st_size)
+        }
+        do {
+            try transferred.seek(toOffset: 0)
+            try output.seek(toOffset: UInt64(offset))
+            var remaining = expectedSize
+            while remaining > 0 {
+                guard !Task.isCancelled else { throw LauncherError.cancelled }
+                let data = try autoreleasepool { try transferred.read(upToCount: Int(min(65_536, remaining))) ?? Data() }
+                guard !data.isEmpty else {
+                    throw LauncherError.sizeMismatch(path: "transferred object", expected: expectedSize, actual: expectedSize - remaining)
+                }
+                try fileOps.writeAll(data, to: output.fileDescriptor)
+                remaining -= Int64(data.count)
+            }
+        } catch let error as LauncherError { throw error }
+        catch { throw LauncherError.io("Cannot decode identity object") }
+    }
+}

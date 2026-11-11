@@ -1,0 +1,512 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import Dispatch
+import Foundation
+import LauncherCore
+
+public struct InstallOperation: Sendable {
+    public enum Mode: Sendable, Equatable {
+        case automatic
+        case batched(approved: Bool)
+    }
+
+    private let plan: InstallPlan
+    private let fs: ContainedFileSystem
+    private let fetcher: ChunkFetcher
+    private let disk: any DiskSpaceProbe
+    private let maxConcurrentObjects: Int
+    private let pipeline: PipelineConfiguration
+    private let mode: Mode
+    private let crashHooks: CrashHooks
+    private let patchApplier: (any WholeFilePatchApplier)?
+    private let objectCache: (any InstallObjectCache)?
+    private let log: EventLog?
+    private let writesCompletionReceipt: Bool
+    private let requireRequestedPlan: Bool
+
+    public init(plan: InstallPlan, installRoot: URL, fetcher: ChunkFetcher,
+        disk: any DiskSpaceProbe = SystemDiskSpaceProbe(), mode: Mode = .automatic,
+        fileOps: any FileOps = SystemFileOps(), crashHooks: CrashHooks = .none,
+        writesCompletionReceipt: Bool = false, requireRequestedPlan: Bool = false,
+        expectedRootIdentity: FileSystemIdentity? = nil, identityProvider: any FileSystemIdentityProvider = SystemFileSystemIdentityProvider(),
+        maxConcurrentObjects: Int = SpaceBudget.defaultMaxConcurrentObjects, pipeline: PipelineConfiguration = .default, patchApplier: (any WholeFilePatchApplier)? = nil, log: EventLog? = nil, objectCache: (any InstallObjectCache)? = nil) throws {
+        try pipeline.validate()
+        guard maxConcurrentObjects > 0 else { throw LauncherError.io("Invalid object concurrency limit") }
+        self.maxConcurrentObjects = maxConcurrentObjects; self.pipeline = pipeline
+        try plan.validate(supportedCodecs: ChunkCodec.supportedCodecs)
+        self.plan = plan; fs = try ContainedFileSystem(root: installRoot, fileOps: fileOps, expectedRootIdentity: expectedRootIdentity, identityProvider: identityProvider)
+        self.fetcher = fetcher; self.disk = disk; self.mode = mode; self.crashHooks = crashHooks; self.patchApplier = patchApplier; self.log = log; self.objectCache = objectCache
+        self.writesCompletionReceipt = writesCompletionReceipt
+        self.requireRequestedPlan = requireRequestedPlan
+    }
+
+    /// Pull-driven events: cancellation follows the consumer task, and discarding the
+    /// stream releases the root lock without leaving a producer running in the background.
+    public func run() -> AsyncThrowingStream<OperationEvent, any Error> { run(retaining: nil) }
+
+    /// Keep the caller's operation ownership alive until cancelled pipeline
+    /// workers join, even if the caller discards its iterator between events.
+    package func run(retaining owner: (any Sendable)?) -> AsyncThrowingStream<OperationEvent, any Error> {
+        let session = CommitSession(requested: plan, fs: fs, fetcher: fetcher, disk: disk, mode: mode, crashHooks: crashHooks,
+            writesCompletionReceipt: writesCompletionReceipt, requireRequestedPlan: requireRequestedPlan, maxConcurrentObjects: maxConcurrentObjects, pipeline: pipeline, retainedOwner: owner, patchApplier: patchApplier, log: log, objectCache: objectCache)
+        return AsyncThrowingStream(unfolding: { try await session.next() })
+    }
+}
+
+private struct CommitPaths: Sendable {
+    let id: SafeIdentifier
+    var directory: SafeRelativePath { get throws { try SafeRelativePath(".macgacha-staging/\(id)") } }
+    var plan: SafeRelativePath { get throws { try SafeRelativePath(".macgacha-staging/\(id)/plan.json") } }
+    var journal: SafeRelativePath { get throws { try SafeRelativePath(".macgacha-staging/\(id)/journal.jsonl") } }
+    func staged(_ path: SafeRelativePath) throws -> SafeRelativePath { try SafeRelativePath(".macgacha-staging/\(id)/files/\(path)") }
+    func object(_ object: ChunkObject) throws -> SafeRelativePath { try SafeRelativePath(".macgacha-staging/\(id)/objects/\(object.partFileName)") }
+}
+
+private actor CommitSession {
+    // Capacity snapshots and metadata mutations can wait for filesystem I/O.
+    // Actor serialization must not occupy a cooperative worker while they do.
+    nonisolated private let ioQueue = DispatchSerialQueue(label: "org.macgacha.install")
+    nonisolated var unownedExecutor: UnownedSerialExecutor { ioQueue.asUnownedSerialExecutor() }
+
+    private enum Step { case start, space, staging, commit, delete, cleanup, done }
+    private struct Stored: Sendable {
+        let plan: InstallPlan
+        let journal: OperationJournal
+        let state: JournalState
+    }
+    private struct Discovered {
+        let plan: InstallPlan
+        let state: JournalState
+    }
+    private let requested: InstallPlan
+    private let fs: ContainedFileSystem
+    private let fetcher: ChunkFetcher
+    private let disk: any DiskSpaceProbe
+    private let maxConcurrentObjects: Int
+    private let pipeline: PipelineConfiguration
+    private let retainedOwner: (any Sendable)?
+    private let mode: InstallOperation.Mode
+    private let crashHooks: CrashHooks
+    private let patchApplier: (any WholeFilePatchApplier)?
+    private let objectCache: (any InstallObjectCache)?
+    private let log: EventLog?
+    private let writesCompletionReceipt: Bool
+    private let requireRequestedPlan: Bool
+    private var lock: InstallLock?
+    private var active: Stored?
+    private var state = JournalState()
+    private var batch: [FileTask] = []
+    private var plannedBatches: [[FileTask]] = []
+    private var nextBatch = 0
+    private var nextCommitIndex = 0
+    private var batchingPrepared = false
+    private var recoveringCommit = false
+    private var operationStager: OperationStager?
+    private let verifiedContainers = VerifiedContainers()
+    private var batchIndex = 0
+    private var staging: AsyncThrowingStream<OperationEvent, any Error>.Iterator?
+    private var step = Step.start
+    private var pendingError: LauncherError?
+    private var pulling = false
+    private static let planLimit = InstallPlan.maximumEncodedBytes
+
+    init(requested: InstallPlan, fs: ContainedFileSystem, fetcher: ChunkFetcher,
+        disk: any DiskSpaceProbe, mode: InstallOperation.Mode, crashHooks: CrashHooks, writesCompletionReceipt: Bool,
+        requireRequestedPlan: Bool, maxConcurrentObjects: Int, pipeline: PipelineConfiguration, retainedOwner: (any Sendable)?, patchApplier: (any WholeFilePatchApplier)?, log: EventLog?, objectCache: (any InstallObjectCache)?) {
+        self.requested = requested; self.fs = fs; self.fetcher = fetcher; self.disk = disk; self.mode = mode; self.crashHooks = crashHooks; self.patchApplier = patchApplier; self.log = log; self.objectCache = objectCache
+        self.writesCompletionReceipt = writesCompletionReceipt
+        self.requireRequestedPlan = requireRequestedPlan
+        self.maxConcurrentObjects = maxConcurrentObjects; self.pipeline = pipeline; self.retainedOwner = retainedOwner
+    }
+
+    func next() async throws -> OperationEvent? {
+        guard !pulling else { throw LauncherError.busy("install stream already in use") }
+        pulling = true
+        defer { pulling = false }
+        if step == .done { return nil }
+        do {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if let pendingError { throw pendingError }
+            switch step {
+            case .start:
+                // Dot-prefixed control files cannot collide with a SafeIdentifier plan ID.
+                try await PipelineRootRetention.waitIfDraining(fs.caseFoldedPathKey(for: SafeRelativePath(".macgacha-staging/.lock")))
+                lock = try InstallLock(fs: fs, path: SafeRelativePath(".macgacha-staging/.lock"))
+                try await selectStoredOrRequested()
+                return try activate()
+            case .space: return try await chooseBatch()
+            case .staging:
+                guard var iterator = staging else { throw LauncherError.journalCorrupt("Missing staging stream") }
+                staging = nil
+                let event = try await iterator.next(isolation: self)
+                staging = iterator
+                if let event { return event }
+                staging = nil
+                for file in batch { try state.apply(.fileStaged(path: file.path)) }
+                try await beginCommit()
+                return .phase(.committing)
+            case .commit:
+                try await commitBatch()
+                try await operationStager?.committed(batch)
+                step = .space
+                return .phase(.checkingSpace)
+            case .delete:
+                try await deleteFiles()
+                crashHooks.reach(.beforeCompleted)
+                try await record(.operationCompleted)
+                crashHooks.reach(.afterOperationCompleted)
+                step = .cleanup
+                return .phase(.cleaningUp)
+            case .cleanup:
+                let finished = try context().plan
+                if writesCompletionReceipt, finished.id == requested.id, finished.planDigest == requested.planDigest {
+                    try CompletionReceipt(planID: finished.id, planDigest: finished.planDigest).write(fs: fs)
+                    crashHooks.reach(.afterCompletionReceipt)
+                }
+                try cleanup(finished)
+                crashHooks.reach(.afterEngineCleanup)
+                if finished.planDigest != requested.planDigest {
+                    try await createRequested()
+                    return try activate()
+                }
+                step = .done; operationStager = nil; lock = nil
+                return .phase(.completed)
+            case .done: return nil
+            }
+        } catch {
+            step = .done; staging = nil; operationStager = nil; lock = nil
+            if Task.isCancelled || error is CancellationError { throw LauncherError.cancelled }
+            throw error
+        }
+    }
+
+    private func context() throws -> Stored {
+        guard let active else { throw LauncherError.journalCorrupt("Missing active install plan") }
+        return active
+    }
+
+    private func refresh() async throws {
+        let context = try context()
+        state = try await context.journal.snapshot()
+    }
+
+    private func record(_ record: JournalRecord) async throws {
+        let context = try context()
+        try await context.journal.append(record)
+        try state.apply(record)
+    }
+
+    private func selectStoredOrRequested() async throws {
+        let root = try SafeRelativePath(".macgacha-staging")
+        let marker = try InstallStateMarker.load(fs: fs)
+        var stored: [Discovered] = []
+        var orphans: [SafeRelativePath] = []
+        var loadedBytes = 0
+        for path in try fs.contentsOfDirectory(at: root).sorted(by: { $0.description < $1.description }) {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            guard try fs.itemType(at: path) == .directory else { continue }
+            let planPath = try SafeRelativePath("\(path)/plan.json")
+            guard try fs.itemType(at: planPath) != nil else {
+                // Interrupted completed cleanup may leave arbitrarily large retained data.
+                // Reclaim it under the root lock before estimating the requested plan's space.
+                guard marker?.planID.description != path.components.last else {
+                    throw LauncherError.journalCorrupt("Install marker has no stored plan")
+                }
+                orphans.append(path)
+                continue
+            }
+            let id = try SafeIdentifier(path.components.last ?? "")
+            let paths = CommitPaths(id: id)
+            guard stored.count < 64 else { throw LauncherError.journalCorrupt("Too many stored plans") }
+            let bytes = try fs.readFile(at: paths.plan, maxBytes: Self.planLimit)
+            guard bytes.count <= Self.planLimit - loadedBytes else {
+                throw LauncherError.fileTooLarge(path: ".macgacha-staging", limit: Self.planLimit)
+            }
+            loadedBytes += bytes.count
+            let plan: InstallPlan
+            do { plan = try JSONDecoder().decode(InstallPlan.self, from: bytes) }
+            catch { throw LauncherError.journalCorrupt("Invalid stored install plan") }
+            // Structural corruption belongs to recovery; missing decoders keep their
+            // actionable codec error, before any stored plan can fetch or commit.
+            guard plan.id == id else { throw LauncherError.journalCorrupt("Stored plan directory mismatch") }
+            try plan.validate()
+            // Read-only discovery: constructing a journal can repair its tail.
+            // No recovery writes are allowed until every plan passes identity checks.
+            let replay = try OperationJournal.replay(fs: fs, path: paths.journal)
+            guard (replay.planID == nil || replay.planID == plan.id),
+                  (replay.planDigest == nil || replay.planDigest == plan.planDigest) else {
+                throw LauncherError.journalCorrupt("Stored plan digest mismatch")
+            }
+            stored.append(Discovered(plan: plan, state: replay))
+        }
+        if requireRequestedPlan, stored.contains(where: {
+            !$0.state.completed && ($0.plan.id != requested.id || $0.plan.planDigest != requested.planDigest)
+        }) { throw LauncherError.journalCorrupt("staging holds another plan") }
+        if let marker, !stored.contains(where: { $0.plan.id == marker.planID }) {
+            throw LauncherError.journalCorrupt("Install marker has no stored plan")
+        }
+        let committing = stored.filter { !$0.state.completed && !$0.state.commitStartedBatches.isEmpty }
+        guard committing.count <= 1 else { throw LauncherError.journalCorrupt("Multiple unfinished committed plans") }
+        let selected = committing.first ?? stored.first(where: { $0.plan.planDigest == requested.planDigest })
+        if let selected, let marker, !selected.state.commitStartedBatches.isEmpty,
+           !selected.state.completed, marker.planID != selected.plan.id {
+            throw LauncherError.journalCorrupt("Install marker belongs to another plan")
+        }
+        for orphan in orphans { try fs.removeItem(at: orphan) }
+        for other in stored where other.plan.id != selected?.plan.id {
+            // Any unfinished committed plan was selected above. Only disposable pre-commit
+            // staging or completed cleanup remains, and all paths stay inside CFS.
+            try cleanup(other.plan)
+        }
+        if let selected {
+            let journal = try OperationJournal(fs: fs, path: CommitPaths(id: selected.plan.id).journal, crashHooks: crashHooks)
+            active = Stored(plan: selected.plan, journal: journal, state: journal.recoveredState)
+            state = journal.recoveredState
+            try validateDeletions(selected.plan)
+            if state.planID == nil {
+                // plan.json is persisted first; a crash or repaired first line can leave
+                // its journal empty. Restore plan identity before any later records.
+                try await record(.planStored(planID: selected.plan.id, planDigest: selected.plan.planDigest))
+                try await record(.operationStarted)
+            }
+        } else { try await createRequested() }
+    }
+
+    private func createRequested() async throws {
+        try validateDeletions(requested)
+        plannedBatches = []; nextBatch = 0; batchingPrepared = false; operationStager = nil
+        let paths = CommitPaths(id: requested.id)
+        if let type = try fs.itemType(at: paths.directory) {
+            guard type == .directory else { throw LauncherError.unsafePath(try paths.directory.description) }
+            // A directory without plan.json can remain after interrupted completed cleanup.
+            // Its old journal must never be reused for a new plan with the same identifier.
+            try fs.removeItem(at: paths.directory)
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let bytes = try encoder.encode(requested)
+        guard bytes.count <= Self.planLimit else { throw LauncherError.fileTooLarge(path: try paths.plan.description, limit: Self.planLimit) }
+        try fs.writeAtomically(bytes, to: paths.plan)
+        let journal = try OperationJournal(fs: fs, path: paths.journal, crashHooks: crashHooks)
+        active = Stored(plan: requested, journal: journal, state: JournalState()); state = JournalState()
+        try await record(.planStored(planID: requested.id, planDigest: requested.planDigest))
+        try await record(.operationStarted)
+    }
+
+    private func activate() throws -> OperationEvent {
+        if state.completed { step = .cleanup; return .phase(.cleaningUp) }
+        let plan = try context().plan
+        if let current = state.currentBatch, state.commitStartedBatches.contains(current) {
+            let paths = Set(plan.files.map(\.path))
+            guard state.batchFiles.isSubset(of: paths) else { throw LauncherError.journalCorrupt("Batch references an unknown file") }
+            batch = plan.files.filter { state.batchFiles.contains($0.path) }
+            batchIndex = current
+            try ensureMarker(plan.id)
+            recoveringCommit = true
+            step = .commit
+            return .phase(.committing)
+        }
+        step = .space
+        return .phase(.checkingSpace)
+    }
+
+    private func pendingPlan() throws -> InstallPlan {
+        let plan = try context().plan
+        let files = plan.files.filter { !state.committedFiles.contains($0.path) }
+        return projection(plan, files: files)
+    }
+
+    private func projection(_ plan: InstallPlan, files: [FileTask]) -> InstallPlan {
+        let ids = Set(files.flatMap { references($0) })
+        return InstallPlan(id: plan.id, objects: plan.objects.filter { ids.contains($0.key) }, files: files)
+    }
+
+    private func chooseBatch() async throws -> OperationEvent {
+        let plan = try context().plan
+        if !batchingPrepared {
+            try await invalidateStaleStagedFiles(plan)
+            // Unverified output is disposable and assembly truncates it. Reclaim
+            // it once, under the root lock, before ALL preflight calculations.
+            let paths = CommitPaths(id: plan.id)
+            for file in plan.files where !state.stagedFiles.contains(file.path) && !state.committedFiles.contains(file.path) {
+                try fs.removeFile(at: paths.staged(file.path))
+            }
+            // A crash/cancellation may follow fileStaged but precede part
+            // cleanup. Reclaim consumed parts before the engine preflight,
+            // rather than waiting until Stager has already accepted space.
+            var outstanding = Set(plan.files.filter {
+                !state.stagedFiles.contains($0.path) && !state.committedFiles.contains($0.path)
+            }.flatMap { SpaceBudget.references($0) })
+            outstanding.formUnion(plan.files.filter { !state.committedFiles.contains($0.path) }.compactMap { $0.recipe?.containerID })
+            for (id, object) in plan.objects where !outstanding.contains(id) {
+                let part = try paths.object(object)
+                if try fs.size(at: part) != nil { try fs.removeFile(at: part) }
+            }
+            if let objectCache {
+                let ids = Set(plan.files.filter { !state.committedFiles.contains($0.path) && !state.stagedFiles.contains($0.path) }.compactMap { $0.recipe?.containerID })
+                for id in ids.sorted() {
+                    try Task.checkCancellation()
+                    let object = plan.objects[id]!, destination = try paths.object(object)
+                    if state.verifiedObjects.contains(id), try fs.size(at: destination) == object.transferSize { continue }
+                    if try await objectCache.adopt(object, to: destination, fs: fs) {
+                        try await record(.objectVerified(id: id))
+                        crashHooks.reach(.afterObjectVerified)
+                        verifiedContainers.insert(destination, digest: object.decodedDigest)
+                    }
+                }
+            }
+            let pending = try pendingPlan()
+            if pending.files.isEmpty {
+                if state.commitStartedBatches.isEmpty, plan.deletions.contains(where: { !state.deletedFiles.contains($0) }) {
+                    batch = []; batchIndex = 0
+                    try await beginCommit()
+                    return .phase(.committing)
+                }
+                step = .delete; return .phase(.deleting)
+            }
+            let available = try fs.availableBytes(using: disk)
+            let required = try SpaceBudget.required(plan: pending, state: state, fs: fs, maxConcurrentObjects: maxConcurrentObjects, pipeline: pipeline).disk
+            let patchUpdate = plan.files.contains { $0.recipe != nil }
+            if !patchUpdate, required <= available { plannedBatches = [pending.files] }
+            else {
+                // Keep independent patch batches even when the whole update
+                // fits. Pass the saved plan so resume retains this policy after
+                // the last recipe file commits, leaving chunk-route files.
+                plannedBatches = try partitionAll(patchUpdate ? plan : pending, available: available)
+                if required > available, state.commitStartedBatches.isEmpty, mode != .batched(approved: true) {
+                    pendingError = .insufficientSpace(required: required, available: available)
+                    return .needsBatchApproval(required: required, available: available)
+                }
+            }
+            operationStager = try Stager(plan: plan, fs: fs, fetcher: fetcher,
+                journal: context().journal, disk: disk, maxConcurrentObjects: maxConcurrentObjects, crashHooks: crashHooks, pipeline: pipeline, patchApplier: patchApplier, log: log).sharingVerifiedContainers(verifiedContainers).forOperation()
+            let previous = max(state.currentBatch ?? -1, state.commitStartedBatches.max() ?? -1)
+            guard previous < Int.max else { throw LauncherError.journalCorrupt("Batch index overflow") }
+            nextCommitIndex = previous + 1
+            batchingPrepared = true
+        }
+        guard nextBatch < plannedBatches.count else { step = .delete; return .phase(.deleting) }
+        batch = plannedBatches[nextBatch]; nextBatch += 1
+        if let started = state.currentBatch, !state.commitStartedBatches.contains(started) { batchIndex = started }
+        else {
+            guard nextCommitIndex < Int.max else { throw LauncherError.journalCorrupt("Batch index overflow") }
+            batchIndex = nextCommitIndex; nextCommitIndex += 1
+        }
+        guard let operationStager else { throw LauncherError.io("Missing operation stager") }
+        staging = operationStager.stage(files: batch, holding: lock, retaining: retainedOwner).makeAsyncIterator()
+        step = .staging
+        return .phase(.staging)
+    }
+
+    private func invalidateStaleStagedFiles(_ plan: InstallPlan) async throws {
+        for file in plan.files where state.stagedFiles.contains(file.path) && !state.committedFiles.contains(file.path) {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if try await !FileAssembler.matches(file, plan: plan, fs: fs) {
+                try await record(.fileUnstaged(path: file.path))
+            }
+        }
+    }
+
+    private func partitionAll(_ pending: InstallPlan, available: Int64) throws -> [[FileTask]] {
+        let result = try SpaceBudget.batchedPreflight(plan: pending, state: state, fs: fs, available: available, maxConcurrentObjects: maxConcurrentObjects, pipeline: pipeline)
+        guard result.required <= available else { throw LauncherError.insufficientSpace(required: result.required, available: available) }
+        return result.batches
+    }
+
+    private func beginCommit() async throws {
+        recoveringCommit = false
+        let selected = Set(batch.map(\.path))
+        guard selected == state.uncommittedStagedFiles,
+            selected == (try await context().journal.stagedForCommit()) else {
+            throw LauncherError.journalCorrupt("Staged batch membership mismatch")
+        }
+        try await record(.batchStarted(index: batchIndex))
+        try ensureMarker(context().plan.id)
+        try await record(.commitStarted(batch: batchIndex))
+        crashHooks.reach(.afterCommitStartedBeforeFirstRename)
+        step = .commit
+    }
+
+    private func ensureMarker(_ id: SafeIdentifier) throws {
+        if let marker = try InstallStateMarker.load(fs: fs), marker.planID != id {
+            throw LauncherError.journalCorrupt("Install marker belongs to another plan")
+        }
+        try InstallStateMarker(planID: id).write(fs: fs)
+    }
+
+    private func commitBatch() async throws {
+        let plan = try context().plan
+        let paths = CommitPaths(id: plan.id)
+        for file in batch {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if state.committedFiles.contains(file.path) { continue }
+            let staged = try paths.staged(file.path)
+            let stagedSize = try fs.size(at: staged)
+            let verifiedStaging = state.stagedFiles.contains(file.path) && stagedSize == file.size
+            var usableStaging = verifiedStaging
+            if recoveringCommit, verifiedStaging { usableStaging = try await FileAssembler.matches(file, plan: plan, fs: fs) }
+            if usableStaging {
+                // Recovery may see data left in the kernel cache by an earlier
+                // interrupted restage. Re-establish the barrier before rename.
+                if recoveringCommit { try fs.fullSync(at: staged) }
+                try fs.rename(from: staged, to: file.path)
+                crashHooks.reach(.afterRenameBeforeJournal)
+            } else if stagedSize == nil, try destinationMatches(file) {
+                // Rename persisted, but its journal append did not.
+                try fs.fullSync(at: file.path)
+            } else {
+                try await record(.fileUnstaged(path: file.path))
+                let stager = try Stager(plan: plan, fs: fs, fetcher: fetcher, journal: context().journal, disk: disk, maxConcurrentObjects: maxConcurrentObjects, crashHooks: crashHooks, pipeline: pipeline, patchApplier: patchApplier, log: log).sharingVerifiedContainers(verifiedContainers).forRecovery()
+                let recovery = try stager.forOperation()
+                for try await _ in recovery.stage(files: [file], holding: lock, retaining: retainedOwner) {}
+                try await refresh()
+                guard state.stagedFiles.contains(file.path), try fs.size(at: staged) == file.size else {
+                    throw LauncherError.journalCorrupt("Restaged file is missing")
+                }
+                try fs.rename(from: staged, to: file.path)
+                crashHooks.reach(.afterRenameBeforeJournal)
+            }
+            try await record(.fileCommitted(path: file.path))
+        }
+    }
+
+    private func destinationMatches(_ file: FileTask) throws -> Bool {
+        guard try fs.size(at: file.path) == file.size else { return false }
+        let input = try fs.openForReading(at: file.path)
+        defer { try? input.close() }
+        var remaining = file.size
+        var hasher = StreamingHasher(file.digest.algorithm)
+        while remaining > 0 {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            guard let data = try autoreleasepool(invoking: { try input.read(upToCount: Int(min(65_536, remaining))) }), !data.isEmpty else { return false }
+            hasher.update(data); remaining -= Int64(data.count)
+        }
+        return hasher.finalize() == file.digest
+    }
+
+    private func validateDeletions(_ plan: InstallPlan) throws {
+        for path in plan.deletions {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            if let type = try fs.itemType(at: path), type != .regularFile { throw LauncherError.unsafePath(path.description) }
+        }
+    }
+
+    private func deleteFiles() async throws {
+        for path in try context().plan.deletions where !state.deletedFiles.contains(path) {
+            guard !Task.isCancelled else { throw LauncherError.cancelled }
+            try fs.removeFile(at: path)
+            try await record(.fileDeleted(path: path))
+        }
+    }
+
+    private func cleanup(_ plan: InstallPlan) throws {
+        try cleanupInstallStaging(planID: plan.id, fs: fs)
+    }
+
+    private func references(_ file: FileTask) -> Set<String> { SpaceBudget.references(file) }
+
+    private func sum(_ a: Int64, _ b: Int64) throws -> Int64 {
+        let (value, overflow) = a.addingReportingOverflow(b)
+        guard !overflow else { throw LauncherError.io("Space budget overflow") }
+        return value
+    }
+}

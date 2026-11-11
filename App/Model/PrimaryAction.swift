@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import Foundation
+import DownloadEngine
+import GameLibrary
+import LauncherCore
+
+struct GameState: Sendable, Equatable {
+    var status: GameStatus
+    var activity: GameActivity? = nil
+    var spaceShortage: GameSpaceShortage? = nil
+    var timing: GameTiming? = nil
+}
+
+struct GameSpaceShortage: Sendable, Equatable {
+    let required: Int64
+    let available: Int64
+    var purgeable: Int64? = nil
+    // LauncherCore uses (1, 0) for unmeasured ENOSPC/EDQUOT allocation
+    // failures. Those bytes say nothing about free capacity or macOS-held space.
+    var isMeasured: Bool { required != 1 || available != 0 }
+    var heldByMacOS: Int64? {
+        guard isMeasured else { return nil }
+        return SpaceVerdict.heldBytes(required: required, available: available, purgeable: purgeable)
+    }
+}
+
+enum GameActivity: Sendable, Equatable {
+    case resolving
+    case working(OperationPhase, fraction: Double?, bytesPerSecond: Int64?, downloaded: Int64? = nil, total: Int64? = nil)
+    case needsApproval(required: Int64, available: Int64)
+}
+
+enum PrimaryAction: Sendable, Equatable {
+    case preparing, progress, continueInParts, install, resume, finishUninstall
+    case update(to: String)
+    case setUpRuntimes, needsRosetta, locationUnavailable, play, launching, playing
+    case recoveryNeeded(String)
+
+    static func resolve(_ state: GameState, runtimesReady: Bool,
+        launch: LaunchUIState? = nil, missingComponents: Bool = false, rosetta: RosettaStatus = .unknown) -> Self {
+        switch launch {
+        case .starting: return .launching
+        case .running, .ready: return .playing
+        case .recoveryNeeded(let reason): return .recoveryNeeded(reason)
+        case .failed, nil: break
+        }
+        switch state.activity {
+        case .resolving: return .preparing
+        case .working: return .progress
+        case .needsApproval: return .continueInParts
+        case nil: break
+        }
+        switch state.status {
+        case .locationUnavailable: return .locationUnavailable
+        case .notInstalled: return .install
+        case .paused: return .resume
+        case .uninstallPaused: return .finishUninstall
+        case .updateAvailable(_, let to): return .update(to: to)
+        case .installed where rosetta == .missing: return .needsRosetta
+        case .installed, .unknown: return runtimesReady && !missingComponents ? .play : .setUpRuntimes
+        }
+    }
+}
+
+enum SpaceVerdict: Sendable, Equatable {
+    case whole, batchedOnly, insufficient
+    case heldByMacOS(purgeable: Int64)
+    static func of(_ estimate: GameEstimate) -> Self {
+        let plain = immediate(estimate)
+        if plain != .whole, let available = estimate.available,
+            let held = heldBytes(required: estimate.diskWhole, available: available, purgeable: estimate.purgeable) {
+            return .heldByMacOS(purgeable: held)
+        }
+        return plain
+    }
+
+    /// Buttons use immediately allocatable bytes, even when Finder shows more.
+    static func immediate(_ estimate: GameEstimate) -> Self {
+        guard let available = estimate.available else { return .whole }
+        if available >= estimate.diskWhole { return .whole }
+        return available >= estimate.diskMinimum ? .batchedOnly : .insufficient
+    }
+
+    static func heldBytes(required: Int64, available: Int64, purgeable: Int64?) -> Int64? {
+        guard available < required, let purgeable, purgeable > 0 else { return nil }
+        let (combined, overflow) = available.addingReportingOverflow(purgeable)
+        return overflow || combined >= required ? purgeable : nil
+    }
+}

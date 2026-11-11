@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import Foundation
+import LauncherCore
+import GameLibrary
+import Launch
+import RuntimeManager
+
+#if DEBUG
+extension AppModel {
+    static func debugPreview(defaults: UserDefaults) -> AppModel? {
+        let region = initialRegion(defaults: defaults, locale: .current)
+        let name = defaults.string(forKey: "MacGachaDebugGameState")
+        let notice = defaults.bool(forKey: "MacGachaDebugRecoveryNotice")
+        let games = LauncherGame.games(in: region)
+        let model: AppModel?
+        if let name, ["predownloadAvailable", "predownloading", "predownloadPaused", "predownloadReady"].contains(name) {
+            let preview = preview(logLines: [], games: Dictionary(uniqueKeysWithValues:
+                games.map { ($0.id, GameState(status: .installed(tag: "7.1.0"))) }), region: region)
+            preview.debugLaunchRuntimesReady = true
+            for game in games {
+                let ready = name == "predownloadReady"
+                let paused = name == "predownloadPaused"
+                let info = PreDownloadInfo(state: ready ? .ready : paused ? .paused : .available, version: "7.2.0",
+                    bytes: 8_400_000_000, downloaded: ready ? 8_400_000_000 : paused ? 3_528_000_000 : 0, canDelete: ready || paused)
+                var overlay = PreDownloadOverlay(info: info)
+                if name == "predownloading" {
+                    overlay.state = .downloading(PreDownloadProgress(isResolving: false, downloaded: 3_528_000_000,
+                        total: 8_400_000_000, fraction: 0.42, bytesPerSecond: 47_000_000))
+                }
+                preview.preDownloads[game.id] = overlay
+            }
+            model = preview
+        } else if let name, let state = debugGameState(name) {
+            model = preview(logLines: [], games: Dictionary(uniqueKeysWithValues: games.map { ($0.id, state) }), region: region)
+        } else if let name, name.hasPrefix("busy") {
+            let requested = name == "busy" ? nil : GameDefinition.find(String(name.dropFirst(5)))
+            let busy = GameDefinition.inRegion(region).first { $0.family == (requested?.family ?? .genshin) }!.id
+            let downloading = GameState(status: .notInstalled, activity: .working(.staging, fraction: 0.12,
+                bytesPerSecond: 215_500_000, downloaded: 18_100_000_000, total: 146_480_000_000))
+            model = preview(rows: [], logLines: [], games: Dictionary(uniqueKeysWithValues: games.map {
+                ($0.id, $0.id == busy ? downloading : GameState(status: .notInstalled))
+            }), region: region)
+            model?.gameOperation = GameOperationToken(id: busy, generation: UUID())
+        } else if let name, name.hasPrefix("dependencies") {
+            let preview = preview(rows: [], logLines: [], region: region)
+            Task { await preview.loadDebugDependencies(installing: name == "dependenciesInstalling") }
+            model = preview
+        } else { model = debugLaunchPreview(state: name, recoveryNotice: notice, region: region) }
+        if notice, let recovery = debugRecoveryNotice(in: region) { model?.recoveryNotices = [recovery] }
+        return model
+    }
+
+    /// The real bundled catalog with a mix of states: an older pinned DXMT build next to
+    /// the recommended one, an installed D3DMetal, a missing helper and an extra.
+    private func loadDebugDependencies(installing: Bool) async {
+        guard let manifest = try? await BundledRuntimeManifest.load(),
+            var snapshot = try? await RuntimeCatalogService(baseline: manifest).snapshot() else { return }
+        let date = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        func component(_ id: String) -> InstalledComponent? {
+            guard let item = manifest.components.first(where: { $0.id.rawValue == id }) else { return nil }
+            return try? InstalledComponent(kind: item.kind, version: item.version.rawValue, installedAt: date, source: .download)
+        }
+        let digest = try! Digest(algorithm: .sha256, hex: String(repeating: "0", count: 64))
+        let root = URL(fileURLWithPath: "/var/empty")
+        let bundles = ["dxmt-wine11.0-dxmt0.80", "dxmt-wine11.0cx-dxmt0.80", "d3dmetal-wine11.20-gptk4.0b3"]
+        var selections = snapshot.selections
+        selections.bundles[.dxmt] = RuntimeCatalogSelection(id: try! SafeIdentifier("dxmt-wine11.0-dxmt0.80"), pinned: true)
+        snapshot = (try? snapshot.replacingSelections(selections)) ?? snapshot
+        applyRuntimeCatalog(snapshot)
+        debugRuntimeState(
+            installed: ["jadeite-4.1.0", "steam-shim-proton-10.0-4", "surround-audio-wine-11.20-1"].compactMap(component),
+            bundles: Dictionary(uniqueKeysWithValues: bundles.map { id in (id, InstalledRuntimeBundle(id: try! SafeIdentifier(id),
+                root: root, wineBinary: root, digest: digest, source: id.hasPrefix("d3dmetal") ? .importFromGPTK : .download)) }),
+            working: installing ? ["genshin-fps-unlock-2": .working(phase: .staging, fraction: 0.42)] : [:])
+    }
+
+    private static func debugGameState(_ name: String) -> GameState? {
+        let time = ContinuousClock.now
+        let eta = GameTiming(phaseStarted: time.advanced(by: .seconds(-60)), lastAdvance: time,
+            remaining: .seconds(12 * 60), hasFraction: true)
+        return switch name {
+        case "preparing": GameState(status: .notInstalled, activity: .resolving)
+        case "progress": GameState(status: .notInstalled, activity: .working(.staging, fraction: 0.42, bytesPerSecond: 47_000_000, downloaded: 57_300_000_000, total: 136_500_000_000), timing: eta)
+        case "verifying": GameState(status: .installed(tag: "7.1.0"), activity: .working(.verifying, fraction: 0.42, bytesPerSecond: nil), timing: eta)
+        case "installingSlow": GameState(status: .notInstalled, activity: .working(.committing, fraction: nil, bytesPerSecond: nil),
+            timing: GameTiming(phaseStarted: time.advanced(by: .seconds(-180)), lastAdvance: time.advanced(by: .seconds(-180)), remaining: nil, hasFraction: false))
+        case "downloadStalled": GameState(status: .notInstalled, activity: .working(.staging, fraction: 0.42, bytesPerSecond: 0, downloaded: 57_300_000_000, total: 136_500_000_000),
+            timing: GameTiming(phaseStarted: time.advanced(by: .seconds(-60)), lastAdvance: time.advanced(by: .seconds(-45)), remaining: .seconds(12 * 60), hasFraction: true))
+        case "parts": GameState(status: .paused(.install), activity: .needsApproval(required: 150_000_000_000, available: 60_000_000_000))
+        case "install": GameState(status: .notInstalled)
+        case "resume": GameState(status: .paused(.update))
+        case "uninstall": GameState(status: .uninstallPaused)
+        case "update": GameState(status: .updateAvailable(from: "7.1.0", to: "7.2.0"))
+        case "location": GameState(status: .locationUnavailable(URL(fileURLWithPath: "/Volumes/Games SSD/MacGacha/Genshin Impact")))
+        case "installed": GameState(status: .installed(tag: "7.1.0"))
+        default: nil
+        }
+    }
+
+    /// Inert screenshot data: no launch, filesystem mutation or recovery is run.
+    static func debugLaunchPreview(state name: String?, recoveryNotice: Bool, region: Region = .global) -> AppModel? {
+        let state: LaunchUIState?
+        switch name {
+        case "playing": state = .running
+        case "launching": state = .starting(.prepare)
+        case "launchFailed": state = .failed(LaunchFailureInfo(stage: .watch,
+            message: String(localized: "The game closed during startup."), hasLog: true, unverifiedBuild: false))
+        case "recoveryNeeded": state = .recoveryNeeded(String(localized: "MacGacha4Life is putting the game's files back. You can play when it's done."))
+        default: state = nil
+        }
+        // `ready` is an idle installed game with every runtime present, so the footer shows Play.
+        guard state != nil || recoveryNotice || name == "ready" else { return nil }
+        let model = AppModel.preview(logLines: [], games: Dictionary(uniqueKeysWithValues:
+            LauncherGame.games(in: region).map { ($0.id, GameState(status: .installed(tag: "1.0"))) }), region: region)
+        model.debugLaunchRuntimesReady = true
+        for game in LauncherGame.games(in: region) {
+            model.launchStates[game.id] = state
+        }
+        let owner = LauncherGame.games(in: region)[1].id
+        if ["playing", "launching", "recoveryNeeded"].contains(name) { model.launchSlotOwner = owner }
+        if name == "playing" || name == "launching" { model.liveLaunchGames.insert(owner) }
+        if recoveryNotice, let notice = debugRecoveryNotice(in: region) { model.recoveryNotices = [notice] }
+        return model
+    }
+
+    private static func debugRecoveryNotice(in region: Region) -> RecoveryNotice? {
+        let game = LauncherGame.games(in: region)[1].id
+        let json = """
+        {"id":"C2579465-61CA-4445-8C35-F00FF1395516","game":"\(game)",\
+        "movedTo":["file:///Volumes/Games/MacGacha/.macgacha-recovery/example/crashreport.exe"]}
+        """
+        return try? JSONDecoder().decode(RecoveryNotice.self, from: Data(json.utf8))
+    }
+}
+#endif

@@ -1,0 +1,63 @@
+// swift-tools-version: 6.4
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import PackageDescription
+
+let package = Package(
+    name: "LauncherKit",
+    defaultLocalization: "en",
+    platforms: [.macOS("27.0")],
+    products: [
+        .library(name: "LauncherCore", targets: ["LauncherCore"]),
+        .library(name: "DownloadEngine", targets: ["DownloadEngine"]),
+        .library(name: "RuntimeManager", targets: ["RuntimeManager"]),
+        .library(name: "Diagnostics", targets: ["Diagnostics"]),
+        .library(name: "HoYoPlayAPI", targets: ["HoYoPlayAPI"]),
+        .library(name: "Sophon", targets: ["Sophon"]),
+        .library(name: "GameLibrary", targets: ["GameLibrary"]),
+        .library(name: "Launch", targets: ["Launch"]),
+        .library(name: "BackdropVideo", targets: ["BackdropVideo"]),
+    ],
+    targets: [
+        .target(name: "LauncherCore"),
+        .target(name: "BackdropVideo", dependencies: ["LauncherCore"], linkerSettings: [
+            .linkedFramework("VideoToolbox"), .linkedFramework("CoreMedia"), .linkedFramework("AVFoundation"),
+        ]),
+        // Decompression only; CZstd.h is the public umbrella over unchanged upstream headers.
+        .target(name: "CZstd", exclude: ["LICENSE", "VENDOR.txt"], publicHeadersPath: "include", cSettings: [
+            .define("ZSTD_DISABLE_ASM", to: "1"), .define("ZSTD_LEGACY_SUPPORT", to: "0"),
+            .unsafeFlags(["-Wno-everything"]),
+        ]),
+        // Six unchanged upstream patch-side files; no threads or whole-file caches.
+        .target(name: "CHDiffPatch", dependencies: ["CZstd"], exclude: ["LICENSE", "VENDOR.txt", "SHA256SUMS"], publicHeadersPath: "include", cSettings: [
+            .define("_IS_USED_MULTITHREAD", to: "0"), .define("_HPATCH_IS_USED_MULTITHREAD", to: "0"),
+            .define("_IS_NEED_CACHE_OLD_ALL", to: "0"), .define("_IS_NEED_CACHE_OLD_BY_COVERS", to: "0"),
+            // The private zstd allocator API is selected textually, outside its public Clang module.
+            .unsafeFlags(["-Wno-everything", "-fno-modules"]),
+        ]),
+        .target(name: "DownloadEngine", dependencies: ["LauncherCore", "CZstd"]),
+        .systemLibrary(name: "CArchive"),
+        .target(name: "RuntimeManager", dependencies: ["LauncherCore", "DownloadEngine", "CArchive"],
+            resources: [.process("Localizable.xcstrings")]),
+        .target(name: "Diagnostics", dependencies: ["LauncherCore"]),
+        .target(name: "HoYoPlayAPI", dependencies: ["LauncherCore", "DownloadEngine"]),
+        .target(name: "Sophon", dependencies: ["LauncherCore", "DownloadEngine", "CHDiffPatch"]),
+        .target(name: "GameLibrary", dependencies: ["LauncherCore", "DownloadEngine", "Sophon"]),
+        .target(name: "Launch", dependencies: ["LauncherCore", "DownloadEngine", "RuntimeManager", "GameLibrary"]),
+        .target(name: "TestSupport", dependencies: ["LauncherCore", "DownloadEngine", "RuntimeManager", "Launch"]),
+        .executableTarget(name: "CrashHarness", dependencies: ["DownloadEngine", "GameLibrary", "Sophon", "TestSupport", "Launch"], path: "Tests/CrashHarness"),
+        .executableTarget(name: "ThroughputBenchmark", dependencies: ["LauncherCore", "DownloadEngine"], path: "Benchmarks/ThroughputBenchmark", exclude: ["README.md"]),
+        .testTarget(name: "LauncherCoreTests", dependencies: ["LauncherCore", "TestSupport", "CrashHarness"]),
+        .testTarget(name: "DownloadEngineTests", dependencies: ["DownloadEngine", "TestSupport", "CrashHarness", "Sophon"],
+            resources: [.copy("Resources/zstd")]),
+        .testTarget(name: "RuntimeManagerTests", dependencies: ["RuntimeManager", "TestSupport", "Launch", "CrashHarness"]),
+        .testTarget(name: "DiagnosticsTests", dependencies: ["Diagnostics", "LauncherCore", "TestSupport"]),
+        .testTarget(name: "HoYoPlayAPITests", dependencies: ["HoYoPlayAPI", "TestSupport"], resources: [.copy("Fixtures/CN"), .copy("Fixtures/Events")]),
+        .testTarget(name: "SophonTests", dependencies: ["Sophon", "TestSupport", "CHDiffPatch"], resources: [.copy("Fixtures/CN"), .copy("Fixtures/HDiffUpstream")]),
+        .testTarget(name: "GameLibraryTests", dependencies: ["GameLibrary", "TestSupport", "CrashHarness"],
+            resources: [.copy("Fixtures/Adopt")]),
+        .testTarget(name: "LaunchTests", dependencies: ["Launch", "TestSupport", "CrashHarness"]),
+        .testTarget(name: "BackdropVideoTests", dependencies: ["BackdropVideo", "TestSupport"], resources: [.copy("Fixtures")]),
+    ],
+    swiftLanguageModes: [.v6]
+)

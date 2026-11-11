@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
+import GameLibrary
+import AppKit
+import Launch
+import LauncherCore
+import SwiftUI
+
+@main
+struct MacGachaApp: App {
+    @State private var model = Self.makeModel()
+    @NSApplicationDelegateAdaptor(LauncherAppDelegate.self) private var delegate
+
+    private static func makeModel() -> AppModel {
+        #if DEBUG
+        if let model = AppModel.debugPreview(defaults: .standard) { return model }
+        #endif
+        return AppModel.forCurrentProcess()
+    }
+
+    var body: some Scene {
+        Window("MacGacha4Life", id: "launcher") {
+            LauncherWindowContent()
+                .environment(model)
+                // Startup belongs to the window, not to the launcher view the loading screen replaces.
+                .task {
+                    delegate.bind(model)
+                    await model.start()
+                }
+        }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1280, height: 720)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { model.checkForUpdates() }
+                    .disabled(!model.canCheckForUpdates)
+            }
+        }
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
+
+        // Quick Play from the menu bar, without bringing the launcher forward first.
+        MenuBarExtra {
+            QuickPlayMenu()
+                .environment(model)
+        } label: {
+            Image("MenuBarIcon")
+        }
+    }
+}
+
+/// One row per game: Play it right away when it's ready, otherwise open the launcher where it needs attention.
+private struct QuickPlayMenu: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    private func action(for game: LauncherGame) -> PrimaryAction {
+        .resolve(model.games[game.id] ?? GameState(status: .unknown), runtimesReady: model.runtimesReady,
+            launch: model.launchState(for: game.id), missingComponents: model.missingComponents(for: game.id), rosetta: model.rosetta)
+    }
+
+    private func symbol(_ action: PrimaryAction) -> String {
+        switch action {
+        case .play: "play.fill"
+        case .playing, .launching: "gamecontroller.fill"
+        case .progress, .preparing: "arrow.down.circle"
+        default: "circle.dashed"
+        }
+    }
+
+    private func show() {
+        NSApp.activate()
+        openWindow(id: "launcher")
+    }
+
+    var body: some View {
+        ForEach(model.visibleGames) { game in
+            let action = action(for: game)
+            Button {
+                if action == .play { model.play(game.id) } else { show() }
+            } label: {
+                Label(game.name, systemImage: symbol(action))
+            }
+        }
+        Divider()
+        Button(action: show) { Text(verbatim: Brand.appName) }
+        SettingsLink { Text("Settings") }
+        Button("Quit") { NSApp.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+}
+
+/// Confirmation presentation belongs to the app's view layer. Scheduling it
+/// after returning terminateLater also supports a synchronous default hook.
+@MainActor final class LauncherAppDelegate: NSObject, NSApplicationDelegate {
+    var retryRecoveries: () -> Void = {}
+    var liveGameName: () -> String? = { nil }
+    var catalogPublication: () -> Task<Void, Never>? = { nil }
+    var requestConfirmation: (String, @escaping @MainActor (NSApplication.TerminateReply) -> Void) -> Void = {
+        _, completion in completion(.terminateNow)
+    }
+    var replyToTermination: (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }
+
+    func bind(_ model: AppModel) {
+        retryRecoveries = { [weak model] in model?.retryRecoveriesOnActivation() }
+        liveGameName = { [weak model] in model?.liveSessionGameName }
+        catalogPublication = { [weak model] in model?.catalogMutationTask }
+        requestConfirmation = { [weak model] game, completion in
+            guard let model else { completion(.terminateNow); return }
+            model.confirmQuit(gameName: game, completion: completion)
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) { retryRecoveries() }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if let publication = catalogPublication() {
+            Task { @MainActor [weak self] in
+                await publication.value
+                guard let self else { return }
+                let reply = self.applicationShouldTerminate(sender)
+                if reply != .terminateLater { self.replyToTermination(reply == .terminateNow) }
+            }
+            return .terminateLater
+        }
+        guard let game = liveGameName() else { return .terminateNow }
+        Task { @MainActor [weak self] in
+            self?.requestConfirmation(game) { [weak self] reply in
+                self?.replyToTermination(reply == .terminateNow)
+            }
+        }
+        return .terminateLater
+    }
+}
+
+extension AppModel {
+    /// Install quitConfirmation from the view layer to present Quit / Cancel.
+    /// Until that presentation lands, the default permits the requested quit.
+    func confirmQuit(gameName: String, completion: @escaping @MainActor (NSApplication.TerminateReply) -> Void) {
+        if let quitConfirmation { quitConfirmation(gameName, completion) }
+        else { completion(.terminateNow) }
+    }
+}
+
+/// Holds the loading screen until HoYoPlay's art is ready, then the launcher itself.
+private struct LauncherWindowContent: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            if model.launcherRevealed {
+                RootView()
+                    .transition(.opacity)
+            } else {
+                LaunchLoadingView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: model.launcherRevealed)
+        .frame(minWidth: 760, minHeight: 480)
+        // Installed here, not in RootView: startup can reattach a running game while the loading screen shows.
+        .task { model.quitConfirmation = QuitConfirmation.present }
+    }
+}
