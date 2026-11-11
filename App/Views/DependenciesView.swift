@@ -390,16 +390,14 @@ private struct StatusBadge: View {
     }
 }
 
-/// A rounded tile in the dependency's own two colors, like the icons in System Settings.
+/// A rounded tile in the dependency's own two colors with its own flat mark.
 private struct DependencyIcon: View {
     let familyID: String
 
     var body: some View {
         let style = Self.style(familyID)
-        Image(systemName: style.symbol)
-            .font(.system(size: 21, weight: .semibold))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.white)
+        DependencyMark(kind: style.kind)
+            .frame(width: 24, height: 24)
             .frame(width: 44, height: 44)
             .background(LinearGradient(colors: [style.top, style.bottom], startPoint: .top, endPoint: .bottom),
                 in: .rect(cornerRadius: 11, style: .continuous))
@@ -407,17 +405,17 @@ private struct DependencyIcon: View {
             .accessibilityHidden(true)
     }
 
-    private static func style(_ id: String) -> (symbol: String, top: Color, bottom: Color) {
+    private static func style(_ id: String) -> (kind: DependencyGlyph.Kind, top: Color, bottom: Color) {
         switch id {
-        case "bundle-dxmt", "component-dxmt": ("cube.transparent.fill", .cyan, .blue)
-        case "bundle-d3dmetal", "component-d3dmetal": ("cpu.fill", .pink, .purple)
-        case "component-wine": ("wineglass.fill", .orange, .red)
-        case "component-jadeite": ("diamond.fill", .mint, .teal)
-        case "component-steamShim": ("gamecontroller.fill", .blue, .indigo)
-        case "component-crypt32Fix": ("checkmark.seal.fill", .yellow, .orange)
-        case "component-surroundAudio": ("hifispeaker.2.fill", .red, .pink)
-        case "component-genshinFps": ("speedometer", .orange, .red)
-        default: ("shippingbox.fill", .gray, .gray)
+        case "bundle-dxmt", "component-dxmt": (.dxmt, .cyan, .blue)
+        case "bundle-d3dmetal", "component-d3dmetal": (.d3dmetal, .pink, .purple)
+        case "component-wine": (.wine, .orange, .red)
+        case "component-jadeite": (.jadeite, .mint, .teal)
+        case "component-steamShim": (.steamShim, .blue, .indigo)
+        case "component-crypt32Fix": (.crypt32, .yellow, .orange)
+        case "component-surroundAudio": (.surround, .red, .pink)
+        case "component-genshinFps": (.fps, .orange, .red)
+        default: (.other, .gray, .gray)
         }
     }
 

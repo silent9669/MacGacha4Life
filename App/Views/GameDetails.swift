@@ -103,7 +103,11 @@ struct GameDetails: View {
                 }
             }
             row("Size on disk") {
-                if let folderBytes { Text(ByteSize.text(folderBytes)) } else { ProgressView().controlSize(.small) }
+                if let folderBytes {
+                    if folderBytes > 0 { Text(ByteSize.text(folderBytes)) } else { Text(verbatim: "—") }
+                } else {
+                    ProgressView().controlSize(.small)
+                }
             }
         }
     }
