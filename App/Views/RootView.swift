@@ -448,7 +448,7 @@ struct RootView: View {
     ]
 
     /// "1100x700" -> the window content size; anything else is ignored.
-    private static func windowSize(_ spec: String) -> CGSize? {
+    static func windowSize(_ spec: String) -> CGSize? {
         let parts = spec.split(separator: "x")
         guard parts.count == 2, let width = Double(parts[0]), let height = Double(parts[1]),
             width > 0, height > 0 else { return nil }
@@ -460,7 +460,7 @@ struct RootView: View {
     /// Frame autosave is cleared first so a debug size is never persisted over the
     /// user's own window frame. Returns false while the launcher window has not appeared yet.
     @discardableResult
-    private static func resizeMainWindow(to size: CGSize) -> Bool {
+    static func resizeMainWindow(to size: CGSize) -> Bool {
         var resized = false
         for window in NSApp.windows where !(window is NSPanel) {
             window.setFrameAutosaveName("")
@@ -474,7 +474,7 @@ struct RootView: View {
     /// `-MacGachaDebugSnapshot /tmp/shot` writes each visible window (sheets included) to
     /// `/tmp/shot-<n>.png` after the UI settles, without screen-recording permission.
     /// `-MacGachaDebugSnapshotDelay 10` extends the settle wait for hero art and video stills.
-    private static func snapshotWindows(to path: String) {
+    static func snapshotWindows(to path: String) {
         let delay = max(UserDefaults.standard.double(forKey: "MacGachaDebugSnapshotDelay"), 1)
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(delay))

@@ -21,7 +21,14 @@ struct MacGachaApp: App {
         #if DEBUG
         if let model = AppModel.debugPreview(defaults: .standard) { return model }
         #endif
-        return AppModel.forCurrentProcess()
+        let model = AppModel.forCurrentProcess()
+        if UserDefaults.standard.object(forKey: "MacGachaDebugIntro") != nil
+            || LaunchIntro.shouldPlay(arguments: ProcessInfo.processInfo.arguments,
+                userReduceMotion: UserDefaults.standard.bool(forKey: "reduceMotion"),
+                systemReduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+            model.startLaunchIntro()
+        }
+        return model
     }
 
     private static func makePlayTimeStore() -> PlayTimeStore {
@@ -180,7 +187,10 @@ private struct LauncherWindowContent: View {
 
     var body: some View {
         ZStack {
-            if model.launcherRevealed {
+            if model.launchIntroPending {
+                LaunchIntro()
+                    .transition(.opacity)
+            } else if model.launcherRevealed {
                 RootView()
                     .transition(.opacity)
             } else {

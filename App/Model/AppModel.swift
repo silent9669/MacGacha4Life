@@ -127,6 +127,8 @@ final class AppModel {
     private(set) var isRuntimeOperationRunning = false
     @ObservationIgnored let updater: any AppUpdating
     private(set) var launcherRevealed = false
+    /// Set once at startup when the launch intro should play; cleared when it ends.
+    private(set) var launchIntroPending = false
     private(set) var artCacheStates: [Region: ArtCacheState] = [:]
     var artCacheState: ArtCacheState { artCacheStates[region] ?? .notChecked }
     @ObservationIgnored let artClock: any Clock<Duration>
@@ -367,6 +369,9 @@ final class AppModel {
         artCacheStates[region] = state
         updateArtReveal()
     }
+
+    func startLaunchIntro() { launchIntroPending = true }
+    func finishLaunchIntro() { launchIntroPending = false }
 
     func revealLauncher() {
         launcherRevealed = true
