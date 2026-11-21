@@ -18,13 +18,17 @@ public struct PreparationRequest: Equatable, Sendable {
     public let crypt32Native: Bool
     public let starRailFrameRate: StarRailFrameRate?
     public let starRailRegion: Region
+    /// Expose DualSense pads as XInput instead of native hidraw devices.
+    public let dualSenseAsXInput: Bool
 
     public init(retina: Bool, steamShim: URL?, dxmtExtras: [String], nvidiaKeys: Bool, crypt32Native: Bool = false,
-        starRailFrameRate: StarRailFrameRate? = nil, starRailRegion: Region = .global, windowsVersion: WineWindowsVersion? = nil) {
+        starRailFrameRate: StarRailFrameRate? = nil, starRailRegion: Region = .global, windowsVersion: WineWindowsVersion? = nil,
+        dualSenseAsXInput: Bool = false) {
         self.windowsVersion = windowsVersion
         self.retina = retina; self.steamShim = steamShim
         self.dxmtExtras = dxmtExtras; self.nvidiaKeys = nvidiaKeys
         self.crypt32Native = crypt32Native
         self.starRailFrameRate = starRailFrameRate; self.starRailRegion = starRailRegion
+        self.dualSenseAsXInput = dualSenseAsXInput
     }
 }

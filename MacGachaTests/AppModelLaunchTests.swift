@@ -104,6 +104,18 @@ struct AppModelLaunchTests {
         #expect(next.launchSettings(for: "genshin") == .defaults(for: "genshin"))
     }
 
+    @Test func controllerModeDefaultsAutomaticAndRoundTrips() async throws {
+        let fixture = try LaunchModelFixture(); defer { fixture.remove() }
+        await fixture.model.reattachOnStart()
+        #expect(fixture.model.controllerMode == .automatic)
+        fixture.model.controllerMode = .xbox
+        try await fixture.model.flushLaunchSettings()
+        let next = fixture.makeModel()
+        await next.reattachOnStart()
+        #expect(next.controllerMode == .xbox)
+        #expect(next.gameModeEnabled)
+    }
+
     @Test func sessionLogsDefaultOnAndRoundTrip() async throws {
         let fixture = try LaunchModelFixture(); defer { fixture.remove() }
         await fixture.model.reattachOnStart()

@@ -148,6 +148,18 @@ struct SettingsView: View {
                 note("macOS gives a full-screen game priority on the CPU and GPU and lowers latency for AirPods and controllers. Takes effect the next time you play.")
             }
             Section {
+                Picker(selection: Binding(
+                    get: { model.controllerMode },
+                    set: { model.controllerMode = $0 }
+                )) {
+                    Text("Automatic").tag(ControllerMode.automatic)
+                    Text(verbatim: ControllerMode.playStation.optionTitle).tag(ControllerMode.playStation)
+                    Text(verbatim: ControllerMode.xbox.optionTitle).tag(ControllerMode.xbox)
+                } label: {
+                    Text(verbatim: ControllerMode.rowLabel)
+                }
+            }
+            Section {
                 Toggle("Save session logs", isOn: Binding(
                     get: { model.sessionLogsEnabled },
                     set: { model.sessionLogsEnabled = $0 }
@@ -289,6 +301,18 @@ private struct LanguageRestartRow: View {
                     .buttonStyle(.mgPrimary)
                     .disabled(model.languageRestartBlocker != nil)
             }
+        }
+    }
+}
+
+/// Proper nouns stay untranslated; "Automatic" is the row's only localized string.
+private extension ControllerMode {
+    static let rowLabel = "DualSense"
+    var optionTitle: String {
+        switch self {
+        case .automatic: return String(localized: "Automatic")
+        case .playStation: return "PlayStation"
+        case .xbox: return "Xbox"
         }
     }
 }

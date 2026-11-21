@@ -17,6 +17,19 @@ import TestSupport
         }
     }
 
+    @Test func controllerModeDefaultsToAutomaticAndToleratesUnknownValues() async throws {
+        #expect(GlobalLaunchSettings().controllerMode == .automatic)
+        #expect(try JSONDecoder().decode(GlobalLaunchSettings.self,
+            from: Data(#"{"sessionLogsEnabled":false}"#.utf8)).controllerMode == .automatic)
+        let unknown = try JSONDecoder().decode(GlobalLaunchSettings.self,
+            from: Data(#"{"sessionLogsEnabled":false,"controllerMode":"nonsense"}"#.utf8))
+        #expect(unknown.controllerMode == .automatic)
+        #expect(!unknown.sessionLogsEnabled)
+        let roundTrip = try JSONDecoder().decode(GlobalLaunchSettings.self,
+            from: JSONEncoder().encode(GlobalLaunchSettings(controllerMode: .xbox)))
+        #expect(roundTrip.controllerMode == .xbox)
+    }
+
     @Test func loggingDefaultsOnAndRoundTripsGlobally() async throws {
         try await BlockingIO.run {
             let temp = try TempDir(), paths = AppPaths(root: temp.url)

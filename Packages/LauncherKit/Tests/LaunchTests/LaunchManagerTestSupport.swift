@@ -149,9 +149,12 @@ struct ManagerPrefixProvider: LaunchPrefixProviding {
 final class ManagerPreparation: LaunchPreparing, Sendable {
     private let failure = Mutex<LauncherError?>(nil)
     private let outcome = Mutex(PreparationOutcome())
+    private let requests = Mutex<[PreparationRequest]>([])
+    var lastRequest: PreparationRequest? { requests.withLock { $0.last } }
     func report(_ result: PreparationOutcome) { outcome.withLock { $0 = result } }
     func fail(_ error: LauncherError = .io("injected preparation failure")) { failure.withLock { $0 = error } }
     func ensure(prefix: URL, wineBinary: URL, request: PreparationRequest) async throws -> PreparationOutcome {
+        requests.withLock { $0.append(request) }
         if let error = failure.withLock({ $0 }) { throw error }
         return outcome.withLock { $0 }
     }
@@ -219,9 +222,10 @@ final class ManagerFixture: Sendable {
     }
     func manager(hideHooks: LaunchFileHooks = .none, beforeJournalRead: @escaping @Sendable () throws -> Void = {},
         beforeRecoveryRead: @escaping @Sendable () async throws -> Void = {}, inspector overrideInspector: (any ProcessInspector)? = nil,
-        log: EventLog? = nil, displayProbe: any DisplayProbe = FixedDisplayProbe(), gameMode: (any GameModeProviding)? = nil, beforeSessionLogWrite: @escaping @Sendable () throws -> Void = {}) -> LaunchManager {
+        log: EventLog? = nil, displayProbe: any DisplayProbe = FixedDisplayProbe(), padProbe: any PadProbe = FixedPadProbe(),
+        gameMode: (any GameModeProviding)? = nil, beforeSessionLogWrite: @escaping @Sendable () throws -> Void = {}) -> LaunchManager {
         LaunchManager(paths: paths, runtimes: runtime, prefixes: prefixes, preparation: preparation,
-            spawner: spawner, inspector: overrideInspector ?? inspector, runner: runner, clock: clock, log: log, displayProbe: displayProbe, gameMode: gameMode,
+            spawner: spawner, inspector: overrideInspector ?? inspector, runner: runner, clock: clock, log: log, displayProbe: displayProbe, padProbe: padProbe, gameMode: gameMode,
             proxyFactory: { [proxy] _, log in proxy.start(log: log); return proxy }, baseEnvironment: [:], journalFileOps: journalOps, hideHooks: hideHooks, beforeJournalRead: beforeJournalRead, beforeRecoveryRead: beforeRecoveryRead,
             sessionProvenance: { (Self.bootSessionUUID, Self.sessionStartTime) }, beforeSessionLogWrite: beforeSessionLogWrite)
     }

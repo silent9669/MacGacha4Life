@@ -32,6 +32,7 @@ public actor LaunchManager {
     private let clock: any Clock<Duration>
     private let gameMode: (any GameModeProviding)?
     private let displayProbe: any DisplayProbe
+    private let padProbe: any PadProbe
     private let proxyFactory: ProxyFactory
     private let baseEnvironment: [String: String]
     private let crossOverRoot: URL?
@@ -84,7 +85,8 @@ public actor LaunchManager {
 
     public init(paths: AppPaths, runtimes: any LaunchRuntimeProviding, prefixes: any LaunchPrefixProviding,
         preparation: any LaunchPreparing, spawner: any ProcessSpawner, inspector: any ProcessInspector,
-        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = SystemDisplayProbe(), gameMode: (any GameModeProviding)? = nil,
+        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = SystemDisplayProbe(),
+        padProbe: any PadProbe = SystemPadProbe(), gameMode: (any GameModeProviding)? = nil,
         crossOverRoot: URL? = nil) {
         self.crossOverRoot = crossOverRoot
         self.gameMode = gameMode ?? GameModeHelper(paths: paths)
@@ -92,6 +94,7 @@ public actor LaunchManager {
         self.sessionLogWriter = Self.makeSessionLogWriter(beforeWrite: {})
         self.paths = paths; self.runtimes = runtimes; self.prefixes = prefixes; self.preparation = preparation
         self.spawner = spawner; self.inspector = inspector; self.runner = runner; self.clock = clock; self.displayProbe = displayProbe
+        self.padProbe = padProbe
         self.fpsInjectorStatus = OwnedSessionChild.systemStatus
         self.baseEnvironment = ProcessInfo.processInfo.environment; self.journalFileOps = SystemFileOps()
         self.recipeOverrides = [:]
@@ -102,7 +105,8 @@ public actor LaunchManager {
 
     package init(paths: AppPaths, runtimes: any LaunchRuntimeProviding, prefixes: any LaunchPrefixProviding,
         preparation: any LaunchPreparing, spawner: any ProcessSpawner, inspector: any ProcessInspector,
-        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = FixedDisplayProbe(), gameMode: (any GameModeProviding)? = nil,
+        runner: any ProcessRunner, clock: any Clock<Duration>, log: EventLog? = nil, displayProbe: any DisplayProbe = FixedDisplayProbe(),
+        padProbe: any PadProbe = FixedPadProbe(), gameMode: (any GameModeProviding)? = nil,
         proxyFactory: @escaping ProxyFactory,
         baseEnvironment: [String: String] = [:], journalFileOps: any FileOps = SystemFileOps(),
         hideHooks: LaunchFileHooks = .none, beforeJournalRead: @escaping @Sendable () throws -> Void = {},
@@ -117,6 +121,7 @@ public actor LaunchManager {
         self.sessionLogWriter = Self.makeSessionLogWriter(beforeWrite: beforeSessionLogWrite)
         self.paths = paths; self.runtimes = runtimes; self.prefixes = prefixes; self.preparation = preparation
         self.spawner = spawner; self.inspector = inspector; self.runner = runner; self.clock = clock; self.displayProbe = displayProbe
+        self.padProbe = padProbe
         self.fpsInjectorStatus = fpsInjectorStatus
         self.proxyFactory = proxyFactory; self.baseEnvironment = baseEnvironment; self.journalFileOps = journalFileOps
         self.recipeOverrides = recipeOverrides
@@ -224,9 +229,13 @@ public actor LaunchManager {
                 events.yield(.note(.fpsUnlockUnavailable))
                 event("FPS unlock unavailable", game: game.id, metadata: ["reason": "riskNotAcknowledged"])
             }
+            let dualSenseAsXInput = try await BlockingIO.run {
+                globalSettings.controllerMode.usesXInputCompatibility(transports: self.padProbe.dualSenseTransports())
+            }
             let logsEnabled = globalSettings.sessionLogsEnabled
             event("Launch started", game: game.id, metadata: ["backend": settings.backend.rawValue,
-                "buildVerification": unverified ? "unverified" : "verified"])
+                "buildVerification": unverified ? "unverified" : "verified",
+                "controllerMode": globalSettings.controllerMode.rawValue, "dualSenseXInput": dualSenseAsXInput ? "true" : "false"])
             let identity = try await BlockingIO.run {
                 let fs = try ContainedFileSystem(root: installRoot).pinRoot()
                 guard try fs.itemType(at: recipe.executable) == .regularFile else { throw LauncherError.io("Game executable is missing") }
@@ -259,7 +268,7 @@ public actor LaunchManager {
             var previewChoice = try LaunchResolver.resolve(recipe: recipe, settings: settings, installRoot: installRoot, prefix: prefix,
                 wineBinary: bundle.wineBinary, proxyPort: 0, componentRoots: selection.componentRoots, baseEnvironment: baseEnvironment,
                 runtimeBundleID: selection.runtimeProfileID, displays: displayProbe.connectedDisplays().map(\.id), gameModeRuntime: helper, gameModeEnabled: globalSettings.gameModeEnabled,
-                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged)
+                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged, dualSenseAsXInput: dualSenseAsXInput)
             stage = .lock; events.yield(.stage(stage))
             let (lock, pin) = try await BlockingIO.run {
                 let lock = try SessionLock.acquire(paths: paths, game: game.id)
@@ -281,7 +290,7 @@ public actor LaunchManager {
                     helper = nil
                     previewChoice = try LaunchResolver.resolve(recipe: recipe, settings: settings, installRoot: installRoot, prefix: prefix,
                         wineBinary: bundle.wineBinary, proxyPort: 0, componentRoots: selection.componentRoots, baseEnvironment: baseEnvironment,
-                        runtimeBundleID: selection.runtimeProfileID, genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged)
+                        runtimeBundleID: selection.runtimeProfileID, genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged, dualSenseAsXInput: dualSenseAsXInput)
                     event("Game Mode unavailable; using normal Wine", game: game.id, metadata: ["reason": "helperValidationFailed"])
                 }
             }
@@ -357,7 +366,7 @@ public actor LaunchManager {
             let displays = displayProbe.connectedDisplays().map(\.id)
             let resolved = try LaunchResolver.resolve(recipe: recipe, settings: settings, installRoot: installRoot, prefix: prefix,
                 wineBinary: bundle.wineBinary, proxyPort: context.proxy!.port, componentRoots: selection.componentRoots, baseEnvironment: baseEnvironment, runtimeBundleID: selection.runtimeProfileID, displays: displays, gameModeRuntime: helper, gameModeEnabled: globalSettings.gameModeEnabled,
-                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged, crossOverRoot: crossOverRoot)
+                genshinFpsRiskAcknowledged: globalSettings.genshinFpsRiskAcknowledged, crossOverRoot: crossOverRoot, dualSenseAsXInput: dualSenseAsXInput)
             context.fpsInjector = resolved.fpsInjector // Fresh launches only; reattachment never resolves a command.
             if !displays.isEmpty {
                 let selection = resolved.displayFallback ? "fallback" : (settings.display == nil ? "main" : "chosen")
