@@ -43,12 +43,13 @@ struct ConsentSheet: View {
             HStack {
                 Spacer()
                 Button("Decline", role: .cancel) { model.respondToConsent(accept: false) }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.cancelAction)
                 Button(request.mode == .importGPTK ? String(localized: "Accept and Import") : String(localized: "Accept and Download")) {
                     model.respondToConsent(accept: true)
                 }
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.mgPrimary)
             }
         }
         .padding(24)

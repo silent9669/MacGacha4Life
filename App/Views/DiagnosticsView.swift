@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DiagnosticsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.appTheme) private var theme
     @State private var exporting = false
     @State private var bundle: DiagnosticZip?
     @State private var exportTask: Task<Void, Never>?
@@ -37,10 +38,14 @@ struct DiagnosticsView: View {
                     .padding(.vertical, 8)
                 }
                 .defaultScrollAnchor(.bottomLeading)
-                .background(.background)
+                .background {
+                    if let base = theme.palette?.base { Rectangle().fill(base) } else { Rectangle().fill(.background) }
+                }
             }
         }
+        .pageBackground()
         .navigationTitle("Diagnostics")
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar {
             ToolbarItemGroup {
                 Button("Refresh", systemImage: "arrow.clockwise") {

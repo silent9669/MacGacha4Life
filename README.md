@@ -16,8 +16,11 @@
 ![Home](assets/screenshots/home.jpg)
 ## Features
 
-- **Home.** Every game as a card with one-click Play, your playtime, free disk space and the latest HoYoPlay events.
-- **A page per game.** Full-bleed art, a glass action bar, and cards for graphics, frame limit, performance overlay, playtime and size on disk.
+- **Home.** A dashboard: what needs your attention, your games with the space each one takes, the latest HoYoPlay highlights and your playtime statistics, with one-click Play.
+- **A page per game.** Full-bleed art and a glass action bar over every launch setting, plus your playtime by week or month and a calendar of the days you played, all in one window.
+- **Dependencies.** One page for Wine, DXMT, D3DMetal and the extras: versions, pinning, Set Up All and Clean Up.
+- **Themes.** Nine optional color themes, such as Catppuccin, Tokyo Night and Dracula. The default look stays native.
+- **Your data stays local.** Playtime and settings never leave your Mac. Back up your settings or export your playtime as CSV.
 - **Load estimate.** A green, yellow or red dot beside each setting shows how hard it works your Mac.
 - **Managed for you.** Installs, updates, repairs and voice packs from HoYoverse's official servers, plus Wine, DXMT and D3DMetal. Downloads pause and resume.
 - **Help & Performance.** Search the web for a game's problems, read known issues, report a bug with your system info and check the settings that affect speed.

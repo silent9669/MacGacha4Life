@@ -88,19 +88,23 @@ struct RuntimeSetupSheet: View {
         if plan == nil {
             if ready {
                 Button("Done") { dismiss() }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.defaultAction)
             } else {
                 Button("Close") { dismiss() }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.defaultAction)
             }
         } else {
             Button("Cancel", role: .cancel) { dismiss() }
+                .buttonStyle(.mgSecondary)
                 .keyboardShortcut(.cancelAction)
             // The sheet closes first so Apple's terms, when needed, can take its place.
             Button("Install") {
                 model.installRecommended(for: game.id)
                 dismiss()
             }
+            .buttonStyle(.mgPrimary)
             .keyboardShortcut(.defaultAction)
         }
     }

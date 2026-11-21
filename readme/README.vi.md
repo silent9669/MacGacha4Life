@@ -17,8 +17,11 @@
 
 ## Tính năng
 
-- **Trang chủ.** Mỗi game là một thẻ với nút Play một chạm, thời gian chơi, dung lượng trống và các sự kiện HoYoPlay mới nhất.
-- **Mỗi game một trang.** Ảnh nghệ thuật tràn viền, thanh thao tác kính mờ và các thẻ về đồ họa, giới hạn khung hình, lớp phủ hiệu năng, thời gian chơi và dung lượng trên ổ đĩa.
+- **Trang chủ.** Bảng điều khiển: những gì cần bạn xử lý, các game kèm dung lượng từng game chiếm, điểm nổi bật mới nhất của HoYoPlay và thống kê thời gian chơi, với nút Play một chạm.
+- **Mỗi game một trang.** Ảnh nghệ thuật tràn viền và thanh thao tác kính phủ lên mọi cài đặt khởi chạy, cùng thời gian chơi theo tuần hoặc tháng và lịch các ngày bạn đã chơi, tất cả trong một cửa sổ.
+- **Thành phần phụ thuộc.** Một trang cho Wine, DXMT, D3DMetal và các tiện ích: phiên bản, ghim, Thiết lập tất cả và Dọn dẹp.
+- **Chủ đề.** Chín chủ đề màu tùy chọn như Catppuccin, Tokyo Night và Dracula. Giao diện mặc định vẫn giữ phong cách gốc.
+- **Dữ liệu ở lại máy bạn.** Thời gian chơi và cài đặt không bao giờ rời khỏi máy Mac. Sao lưu cài đặt hoặc xuất thời gian chơi ra CSV.
 - **Ước tính tải.** Chấm xanh, vàng hoặc đỏ cạnh mỗi cài đặt cho biết mức độ nặng với máy Mac của bạn.
 - **Được quản lý giúp bạn.** Cài đặt, cập nhật, sửa chữa và gói giọng nói từ máy chủ chính thức của HoYoverse, cùng Wine, DXMT và D3DMetal. Có thể tạm dừng và tiếp tục tải xuống.
 - **Trợ giúp & Hiệu năng.** Tìm trên web các sự cố của game, xem lỗi đã biết, báo lỗi kèm thông tin hệ thống và kiểm tra các cài đặt ảnh hưởng đến tốc độ.

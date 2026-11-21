@@ -19,7 +19,13 @@ import Observation
         if images.keys.contains(where: { !wanted.contains($0) }) { images = images.filter { wanted.contains($0.key) } }
         loading.formIntersection(wanted)
         if failed.contains(where: { !wanted.contains($0) }) { failed.formIntersection(wanted) }
-        for url in wanted where images[url] == nil && !loading.contains(url) && !failed.contains(url) {
+        warm(urls)
+    }
+
+    /// Loads images without evicting anything — every game's highlight thumbnails share
+    /// the cache with the selected game's hero slides.
+    func warm(_ urls: [URL]) {
+        for url in urls where images[url] == nil && !loading.contains(url) && !failed.contains(url) {
             loading.insert(url)
             Task {
                 let image = await Self.load(url)

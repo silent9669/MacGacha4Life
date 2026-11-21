@@ -50,19 +50,23 @@ struct RosettaSheet: View {
                 Spacer()
                 if installed {
                     Button("Done") { dismiss() }
+                        .buttonStyle(.mgSecondary)
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button("Cancel", role: .cancel) {
                         model.cancelRosettaInstall()
                         dismiss()
                     }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.cancelAction)
                     // While waiting, the same button brings Apple's window back instead of starting over.
                     if waiting {
                         Button("Show Apple's Window Again") { model.requestRosettaInstall() }
+                            .buttonStyle(.mgPrimary)
                             .keyboardShortcut(.defaultAction)
                     } else {
                         Button("Install Rosetta…") { model.requestRosettaInstall() }
+                            .buttonStyle(.mgPrimary)
                             .keyboardShortcut(.defaultAction)
                     }
                 }

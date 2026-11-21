@@ -4,28 +4,8 @@ import AppKit
 import HoYoPlayAPI
 import SwiftUI
 
-/// The newest posts of every game in the rail, each row with its game's icon. Posts have no stable id,
-/// and titles can repeat, so rows are keyed by position.
-struct LatestEventsCard: View {
-    @Environment(AppModel.self) private var model
-
-    private var items: [(game: LauncherGame, event: GameEvent)] {
-        model.visibleGames.flatMap { game in (model.gameEvents[game.id] ?? []).prefix(2).map { (game, $0) } }
-    }
-
-    var body: some View {
-        if !items.isEmpty {
-            Card("Events") {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                        EventRow(event: item.event, icon: model.gameArt[item.game.id]?.icon)
-                    }
-                }
-            }
-        }
-    }
-}
-
+/// One HoYoPlay post with its game's icon. Posts have no stable id, and titles can
+/// repeat, so callers key the rows by position.
 struct EventRow: View {
     let event: GameEvent
     var icon: URL?

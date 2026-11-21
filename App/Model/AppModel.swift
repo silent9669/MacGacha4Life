@@ -220,6 +220,8 @@ final class AppModel {
     @ObservationIgnored var rosettaHelperLaunchFailed = false
     @ObservationIgnored var runtimeSetupRosettaChecks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private(set) var runtimeSetupProgress: [String: RuntimeSetupProgress] = [:]
+    /// Set Up All: games still missing pieces, in sidebar order. One chain runs at a time.
+    var setUpAllQueue: [String] = []
     var runtimeConsentAccepted: [String: Bool] = [:]
     @ObservationIgnored var runtimeConsentRevision = UUID()
     @ObservationIgnored var runtimeSetupChains: [String: RuntimeSetupChain] = [:]
