@@ -21,14 +21,15 @@ enum Page: Hashable {
 /// every game as a card; a game's page opens with its art and Liquid Glass action bar, then cards.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(PlayTimeStore.self) private var playTime
     @SceneStorage("selectedGame") private var selectedID = LauncherGame.all[0].id
     @State private var page: Page = .home
-    @State private var playTime = PlayTimeStore()
     @State private var gameSheet: GameSheet?
     /// On by default like HoYoPlay; Reduce Motion starts with still images instead.
     @AppStorage("animatedBackgrounds") private var animatedSetting = true
     @AppStorage("animatedBackgroundsChosen") private var animatedChosen = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("reduceMotion") private var reduceMotionSetting = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.scenePhase) private var scenePhase
@@ -68,10 +69,20 @@ struct RootView: View {
     /// While a game runs the launcher shows stills, so video decoding never competes with the game.
     private var animated: Binding<Bool> {
         Binding(
-            get: { (animatedChosen ? animatedSetting : (animatedSetting && !reduceMotion && !lowPowerMode)) && model.launchSlotOwner == nil },
+            get: { (animatedChosen ? animatedSetting : (animatedSetting && !backgroundReduceMotion && !lowPowerMode)) && model.launchSlotOwner == nil },
             set: { animatedSetting = $0; animatedChosen = true }
         )
     }
+
+    /// Chrome animations stop for the Reduce Motion switch, macOS Reduce Motion or a running game.
+    private var motionReduced: Bool {
+        MotionPolicy.reduced(user: reduceMotionSetting, system: systemReduceMotion,
+            gameRunning: model.launchSlotOwner != nil)
+    }
+
+    /// The backgrounds' own Reduce Motion input: a running game already forces stills
+    /// through `animated`, so it isn't fed in twice here.
+    private var backgroundReduceMotion: Bool { reduceMotionSetting || systemReduceMotion }
 
     private struct SelectionInputs: Equatable {
         let region: Region
@@ -83,7 +94,7 @@ struct RootView: View {
 
     private var selectionInputs: SelectionInputs {
         SelectionInputs(region: model.region, gameID: game.id, backgrounds: model.gameArt[game.id]?.backgrounds ?? [],
-            animated: animated.wrappedValue, reduceMotion: reduceMotion)
+            animated: animated.wrappedValue, reduceMotion: backgroundReduceMotion)
     }
 
     /// The selected slide once its image is decoded; until then the previous slide stays.
@@ -174,7 +185,9 @@ struct RootView: View {
             detail
         }
         .environment(playTime)
-        .animation(.smooth(duration: 0.35), value: page)
+        .motionAnimation(.smooth(duration: 0.35), value: page)
+        // The environment has to sit outside `motionAnimation` for its lookup to see it.
+        .environment(\.motionReduced, motionReduced)
         .onChange(of: page, initial: true) { _, new in
             if case .game(let id) = new { selectedID = id }
         }
@@ -184,6 +197,15 @@ struct RootView: View {
         }
         .onChange(of: model.isStarting) { _, starting in
             if !starting { playTime.update(live: liveGames) }
+        }
+        // A heartbeat every minute bounds how far a session orphaned by a quit or crash
+        // can over-count when it's reconciled on the next launch.
+        .task(id: liveGames.isEmpty) {
+            guard !liveGames.isEmpty else { return }
+            while !Task.isCancelled {
+                playTime.heartbeat()
+                do { try await ContinuousClock().sleep(for: .seconds(60)) } catch { return }
+            }
         }
         .onChange(of: selectionInputs, initial: true) { old, new in
             if old.gameID != new.gameID || old.region != new.region { shownSlide = nil }
@@ -334,6 +356,7 @@ struct RuntimeFlowSheets: ViewModifier {
 #Preview {
     RootView()
         .environment(AppModel.preview())
+        .environment(PlayTimeStore())
         .frame(width: 1100, height: 620)
 }
 

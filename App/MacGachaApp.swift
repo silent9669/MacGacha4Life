@@ -9,6 +9,8 @@ import SwiftUI
 @main
 struct MacGachaApp: App {
     @State private var model = Self.makeModel()
+    /// One store for the launcher window and Settings, so both see the same playtime.
+    @State private var playTime = Self.makePlayTimeStore()
     @NSApplicationDelegateAdaptor(LauncherAppDelegate.self) private var delegate
 
     private static func makeModel() -> AppModel {
@@ -18,10 +20,20 @@ struct MacGachaApp: App {
         return AppModel.forCurrentProcess()
     }
 
+    private static func makePlayTimeStore() -> PlayTimeStore {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "MacGachaDebugStats") == "demo" {
+            return PlayTimeStore.demo()
+        }
+        #endif
+        return PlayTimeStore()
+    }
+
     var body: some Scene {
         Window(Brand.appName, id: "launcher") {
             LauncherWindowContent()
                 .environment(model)
+                .environment(playTime)
                 // Startup belongs to the window, not to the launcher view the loading screen replaces.
                 .task {
                     delegate.bind(model)
@@ -40,6 +52,7 @@ struct MacGachaApp: App {
         Settings {
             SettingsView()
                 .environment(model)
+                .environment(playTime)
         }
 
         // Quick Play from the menu bar, without bringing the launcher forward first.

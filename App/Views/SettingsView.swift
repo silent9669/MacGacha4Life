@@ -6,9 +6,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(PlayTimeStore.self) private var playTime
     @State private var choosing = false
+    @State private var confirmingReset = false
     @AppStorage("animatedBackgrounds") private var animatedBackgrounds = true
     @AppStorage("animatedBackgroundsChosen") private var animatedChosen = false
+    @AppStorage("reduceMotion") private var reduceMotionSetting = false
     @State private var language = InterfaceLanguageSettings()
 
     var body: some View {
@@ -56,6 +59,9 @@ struct SettingsView: View {
                 ))
             } footer: {
                 note("Plays the game's animated art when HoYoPlay provides it. Still images use less power.")
+            }
+            Section {
+                Toggle("Reduce Motion", isOn: $reduceMotionSetting)
             }
         }
         .formStyle(.grouped)
@@ -110,9 +116,18 @@ struct SettingsView: View {
             } footer: {
                 note("Games need a lot of space. Pick a drive with at least 100 GB free.")
             }
+            Section {
+                Button("Reset Stats…", role: .destructive) { confirmingReset = true }
+            }
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+        .confirmationDialog("Reset Stats?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { playTime.reset() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Playtime and history for every game will be erased. This can't be undone.")
+        }
     }
 
     private var updates: some View {
@@ -194,4 +209,5 @@ private struct LanguageRestartRow: View {
 #Preview {
     SettingsView()
         .environment(AppModel.preview())
+        .environment(PlayTimeStore())
 }
