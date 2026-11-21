@@ -7,16 +7,22 @@ public struct GlobalLaunchSettings: Codable, Equatable, Sendable {
     public var sessionLogsEnabled: Bool
     public var gameModeEnabled: Bool
     public var genshinFpsRiskAcknowledged: Bool
-    public init(sessionLogsEnabled: Bool = true, gameModeEnabled: Bool = true, genshinFpsRiskAcknowledged: Bool = false) {
+    public var controllerMode: ControllerMode
+    public init(sessionLogsEnabled: Bool = true, gameModeEnabled: Bool = true, genshinFpsRiskAcknowledged: Bool = false,
+        controllerMode: ControllerMode = .automatic) {
         self.sessionLogsEnabled = sessionLogsEnabled; self.gameModeEnabled = gameModeEnabled
         self.genshinFpsRiskAcknowledged = genshinFpsRiskAcknowledged
+        self.controllerMode = controllerMode
     }
-    private enum CodingKeys: CodingKey { case sessionLogsEnabled, gameModeEnabled, genshinFpsRiskAcknowledged }
+    private enum CodingKeys: CodingKey { case sessionLogsEnabled, gameModeEnabled, genshinFpsRiskAcknowledged, controllerMode }
     public init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         sessionLogsEnabled = try values.decodeIfPresent(Bool.self, forKey: .sessionLogsEnabled) ?? true
         gameModeEnabled = try values.decodeIfPresent(Bool.self, forKey: .gameModeEnabled) ?? true
         genshinFpsRiskAcknowledged = try values.decodeIfPresent(Bool.self, forKey: .genshinFpsRiskAcknowledged) ?? false
+        // Missing or unrecognised values fall back to automatic rather than
+        // invalidating the whole settings file.
+        controllerMode = (try? values.decode(ControllerMode.self, forKey: .controllerMode)) ?? .automatic
     }
 }
 

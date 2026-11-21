@@ -40,7 +40,12 @@ import RuntimeManager
         set { setGlobalLaunchPreference(\.gameModeEnabled, to: newValue) }
     }
 
-    func setGlobalLaunchPreference(_ key: WritableKeyPath<GlobalLaunchSettings, Bool>, to value: Bool) {
+    var controllerMode: ControllerMode {
+        get { globalLaunchSettings.controllerMode }
+        set { setGlobalLaunchPreference(\.controllerMode, to: newValue) }
+    }
+
+    func setGlobalLaunchPreference<Value>(_ key: WritableKeyPath<GlobalLaunchSettings, Value>, to value: Value) {
         // No settings writes may enter behind the restart's final flush.
         guard languageRestart == nil else { show(LauncherError.busy("Application language restart is in progress")); return }
         let preferences = launchPreferences

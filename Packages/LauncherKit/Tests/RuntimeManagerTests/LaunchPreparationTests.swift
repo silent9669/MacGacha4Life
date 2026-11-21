@@ -212,6 +212,29 @@ import TestSupport
         }
     }
 
+    @Test(arguments: [false, true]) func dualSenseModeWritesHidrawOverrideEveryLaunch(xinput: Bool) async throws {
+        try await BlockingIO.run {
+            let temp = try TempDir(), fixture = try await PreparationFixture(root: temp.url)
+            let runner = FakeProcessRunner()
+            let request = PreparationRequest(retina: false, steamShim: nil, dxmtExtras: [], nvidiaKeys: false,
+                dualSenseAsXInput: xinput)
+            try await fixture.preparer(runner).ensure(prefix: fixture.prefix, wineBinary: fixture.wine, request: request)
+            let value = xinput ? "0" : "1"
+            for product in ["0ce6", "0df2"] {
+                #expect(runner.invocations.contains { $0.arguments == ["reg", "add",
+                    "HKLM\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\054c/\(product)",
+                    "/v", "hidraw", "/t", "REG_DWORD", "/d", value, "/f"] })
+            }
+            #expect(runner.invocations.filter { $0.arguments.contains("hidraw") }.count == 2)
+            #expect(runner.invocations.last?.arguments == ["-w"])
+            // The override converges per launch, not per provisioning revision.
+            let second = FakeProcessRunner()
+            try await fixture.preparer(second).ensure(prefix: fixture.prefix, wineBinary: fixture.wine, request: request)
+            #expect(second.invocations.filter { $0.arguments.contains("hidraw") }.count == 2)
+            #expect(second.invocations.last?.arguments == ["-w"])
+        }
+    }
+
     @Test(arguments: ["drive_c", "drive_c/users", "drive_c/users/player"], [false, true])
     func unsafeProfileAncestorsFailBeforeWine(ancestor: String, symlink: Bool) async throws {
         try await BlockingIO.run {
@@ -286,7 +309,7 @@ import TestSupport
             let second = FakeProcessRunner()
             try await fixture.preparer(second).ensure(prefix: fixture.prefix, wineBinary: fixture.wine, request: fixture.request())
             #expect(try fixture.fs.itemType(at: later) == .directory)
-            #expect(second.invocations.count == 2)
+            #expect(second.invocations.count == 4)
         }
     }
 
@@ -326,7 +349,7 @@ import TestSupport
             try await preparer.ensure(prefix: fixture.prefix, wineBinary: fixture.wine,
                 request: PreparationRequest(retina: true, steamShim: nil, dxmtExtras: [], nvidiaKeys: true))
             let commands = runner.invocations.filter { $0.executable == fixture.wine }.map { "registry " + $0.arguments.joined(separator: " ") }
-            #expect(commands.count == 14)
+            #expect(commands.count == 16)
             let expected = commands + ["wineserver -w", "wineserver exited"] + registryFiles.map { "fsync " + $0 } + ["write marker", "fullsync marker", "publish marker"]
             #expect(audit.events.filter { $0 != "fsync prefix" } == expected)
             let beforeMarker = audit.events.prefix { $0 != "write marker" }
@@ -407,7 +430,7 @@ import TestSupport
             #expect(try fixture.revision() == LaunchPreparation.provisioningRevision)
             // Account for every Wine command: a .reg import would conceal its
             // registry keys from the command log, so prohibit imports as well.
-            #expect(runner.invocations.count == 15)
+            #expect(runner.invocations.count == 17)
             for call in runner.invocations where call.executable == fixture.wine {
                 #expect(call.arguments.prefix(2) == ["reg", "add"] || call.arguments.prefix(2) == ["reg", "delete"])
                 let command = call.arguments.joined(separator: " ").uppercased()
@@ -470,9 +493,9 @@ import TestSupport
             try await fixture.preparer(FakeProcessRunner()).ensure(prefix: fixture.prefix, wineBinary: fixture.wine, request: fixture.request())
             let runner = FakeProcessRunner()
             try await fixture.preparer(runner).ensure(prefix: fixture.prefix, wineBinary: fixture.wine, request: fixture.request(retina: true))
-            #expect(runner.invocations.count == 2)
+            #expect(runner.invocations.count == 4)
             #expect(runner.invocations[0].arguments.suffix(3) == ["/d", "y", "/f"])
-            #expect(runner.invocations[1].arguments == ["-w"])
+            #expect(runner.invocations.last?.arguments == ["-w"])
             #expect(try fixture.revision() == LaunchPreparation.provisioningRevision)
         }
     }

@@ -43,7 +43,9 @@ let package = Package(
         .target(name: "HoYoPlayAPI", dependencies: ["LauncherCore", "DownloadEngine"]),
         .target(name: "Sophon", dependencies: ["LauncherCore", "DownloadEngine", "CHDiffPatch"]),
         .target(name: "GameLibrary", dependencies: ["LauncherCore", "DownloadEngine", "Sophon"]),
-        .target(name: "Launch", dependencies: ["LauncherCore", "DownloadEngine", "RuntimeManager", "GameLibrary"]),
+        .target(name: "Launch", dependencies: ["LauncherCore", "DownloadEngine", "RuntimeManager", "GameLibrary"], linkerSettings: [
+            .linkedFramework("IOKit"),
+        ]),
         .target(name: "TestSupport", dependencies: ["LauncherCore", "DownloadEngine", "RuntimeManager", "Launch"]),
         .executableTarget(name: "CrashHarness", dependencies: ["DownloadEngine", "GameLibrary", "Sophon", "TestSupport", "Launch"], path: "Tests/CrashHarness"),
         .executableTarget(name: "ThroughputBenchmark", dependencies: ["LauncherCore", "DownloadEngine"], path: "Benchmarks/ThroughputBenchmark", exclude: ["README.md"]),

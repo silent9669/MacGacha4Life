@@ -65,7 +65,7 @@ public enum LaunchResolver {
         wineBinary: URL, proxyPort: UInt16, componentRoots: [ComponentKind: URL], baseEnvironment: [String: String],
         runtimeBundleID: String? = nil, displays: [String] = [],
         gameModeRuntime: GameModeRuntime? = nil, gameModeEnabled: Bool = true,
-        genshinFpsRiskAcknowledged: Bool = false, crossOverRoot: URL? = nil) throws -> ResolvedLaunch {
+        genshinFpsRiskAcknowledged: Bool = false, crossOverRoot: URL? = nil, dualSenseAsXInput: Bool = false) throws -> ResolvedLaunch {
         guard Recipes.recipe(for: recipe.game) != nil else { throw LauncherError.io("Unknown launch game: \(recipe.game)") }
         try settings.validate(for: recipe.game)
         for url in [installRoot, prefix, wineBinary] { try validateLocalURL(url) }
@@ -174,7 +174,8 @@ public enum LaunchResolver {
                 crypt32Native: requiredComponents.contains(.crypt32Fix),
                 starRailFrameRate: offersStarRailUnlock(recipe.game) ? (settings.unlockFPS ? .unlock120 : .restore) : nil,
                 starRailRegion: starRail ? (GameDefinition.find(recipe.game)?.region ?? .global) : .global,
-                windowsVersion: [GameFamily.genshin, .zzz].contains(GameDefinition.find(recipe.game)?.family ?? .starrail) ? .win11 : nil),
+                windowsVersion: [GameFamily.genshin, .zzz].contains(GameDefinition.find(recipe.game)?.family ?? .starrail) ? .win11 : nil,
+                dualSenseAsXInput: dualSenseAsXInput),
             requiredComponents: requiredComponents, componentCopies: componentCopies, displayFallback: displayFallback, fpsInjector: fpsInjector)
     }
 

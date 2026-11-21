@@ -228,3 +228,11 @@ func windows11ProfileIsScopedAndIndependentOfPatches(game: String, backend: Runt
         #expect(value.preparation.windowsVersion == (["genshin", "zzz", "genshin-cn", "zzz-cn"].contains(game) ? .win11 : nil))
     }
 }
+
+@Test func dualSenseAsXInputFlowsIntoPreparation() throws {
+    #expect(try resolve("zzz").preparation.dualSenseAsXInput == false)
+    let value = try LaunchResolver.resolve(recipe: #require(Recipes.recipe(for: "zzz")),
+        settings: .defaults(for: "zzz"), installRoot: installRoot, prefix: prefix, wineBinary: wine,
+        proxyPort: 12345, componentRoots: roots, baseEnvironment: [:], dualSenseAsXInput: true)
+    #expect(value.preparation.dualSenseAsXInput)
+}

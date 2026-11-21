@@ -87,6 +87,12 @@ public struct LaunchPreparation: Sendable {
         if let version = request.windowsVersion {
             try await run(binary, ["reg", "add", "HKCU\\Software\\Wine", "/v", "Version", "/t", "REG_SZ", "/d", version.rawValue, "/f"], environment)
         }
+        // winebus reads its per-device hidraw override when the wineserver
+        // starts. Writing every launch converges controller-mode changes.
+        for product in ["0ce6", "0df2"] {
+            try await run(binary, ["reg", "add", "HKLM\\System\\CurrentControlSet\\Services\\WineBus\\Devices\\054c/\(product)",
+                "/v", "hidraw", "/t", "REG_DWORD", "/d", request.dualSenseAsXInput ? "0" : "1", "/f"], environment)
+        }
         if let shim = request.steamShim {
             let source = try ContainedFileSystem(root: shim)
             for (name, destination, optional) in [
