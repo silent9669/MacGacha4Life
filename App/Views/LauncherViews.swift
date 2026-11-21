@@ -35,50 +35,187 @@ struct LocalImage: View {
 
 // MARK: - Sidebar
 
-/// The native sidebar: Home, every game with its state (⌘1–⌘3 switch), then the app's pages.
+/// Geometry the floating rail reserves for itself: 12 pt window inset, a 64 pt
+/// capsule and a 12 pt gap before content begins.
+enum Rail {
+    static let reserved: CGFloat = 88
+    static let tile: CGFloat = 48
+    static let spacing: CGFloat = 6
+    static let pad: CGFloat = 8
+    static let top: CGFloat = 52
+    static let bottom: CGFloat = 12
+    static let gap: CGFloat = 12
+
+    /// Window height at which the two capsules still clear each other: top inset +
+    /// top capsule + gap + bottom capsule + bottom inset. The top capsule holds the
+    /// Home tile, a divider and one tile per game; the bottom holds the four tools.
+    static func minWindowHeight(games: Int) -> CGFloat {
+        let topCapsule = CGFloat(games + 1) * tile + CGFloat(games + 1) * spacing + 1 + 2 * pad
+        let bottomCapsule = 4 * tile + 3 * spacing + 2 * pad
+        return top + topCapsule + gap + bottomCapsule + bottom
+    }
+}
+
+/// The floating icon rail: two Liquid Glass capsules over full-bleed content —
+/// Home and the games up top, Dependencies and the remaining tools and Settings
+/// at the bottom. One accent-tinted glass tile morphs to the selection, even
+/// across the capsules (one `glassEffectID` in a shared namespace). Icons only —
+/// names live in tooltips and accessibility labels, ⌘1–⌘9 still pick a game.
 struct GameSidebar: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.appTheme) private var theme
     @Binding var page: Page
+    /// The window's content height as measured in RootView. The capsules are
+    /// parked relative to the WINDOW edges, not this view's frame: the glass
+    /// container's frame can extend past the window on a full-bleed page.
+    var windowHeight: CGFloat = 0
+    @Namespace private var namespace
+    @State private var hovered: String?
+    @State private var appeared = false
+    /// How far the rail's frame already sits below the window's top edge.
+    @State private var topInset: CGFloat = 0
+    /// The rail frame's bottom edge in window coordinates.
+    @State private var frameBottom: CGFloat = 0
+
+    /// Extra padding when the glass container's frame runs past the window's
+    /// bottom edge, so the bottom capsule still ends Rail.bottom above it.
+    private var bottomPad: CGFloat {
+        Rail.bottom + (windowHeight > 0 ? max(0, frameBottom - windowHeight) : 0)
+    }
+
+    private var accent: Color { theme.palette?.accent ?? .accentColor }
+    private var capsuleShape: some Shape { .rect(cornerRadius: 26, style: .continuous) }
 
     var body: some View {
-        List(selection: Binding<Page?>(get: { page }, set: { if let value = $0 { page = value } })) {
-            Label("Home", systemImage: "house").tag(Page.home)
-            Section {
-                ForEach(model.visibleGames) { game in
-                    GameRow(game: game, art: model.gameArt[game.id], badge: badge(for: game), subtitle: model.statusSubtitle(for: game))
-                        .tag(Page.game(game.id))
-                        .accessibilityLabel(game.name)
+        GlassEffectContainer(spacing: Rail.gap) {
+            VStack(spacing: Rail.spacing) {
+                homeTile
+                Rectangle()
+                    .fill(.primary.opacity(0.15))
+                    .frame(width: 24, height: 1)
+                ForEach(Array(model.visibleGames.enumerated()), id: \.element.id) { index, game in
+                    Button { page = .game(game.id) } label: {
+                        tileChrome(id: game.id, index: index + 1, selected: page == .game(game.id)) {
+                            RailGameIcon(game: game, art: model.gameArt[game.id], badge: badge(for: game))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(game.name)
+                    .help(Text(verbatim: help(for: game)))
                 }
             }
-            Section {
-                Label("Dependencies", systemImage: "shippingbox").tag(Page.tool(.dependencies))
-                Label("Help & Performance", systemImage: "lifepreserver").tag(Page.tool(.support))
-                Label("Diagnostics", systemImage: "stethoscope").tag(Page.tool(.diagnostics))
-                SettingsLink { Label("Settings", systemImage: "gearshape") }
-                    .buttonStyle(.plain)
+            .padding(Rail.pad)
+            .frame(width: 64)
+            .glassEffect(.regular, in: capsuleShape)
+            // The capsule's top edge sits Rail.top below the WINDOW's top: the
+            // rail's own frame already starts under the title bar, so only the
+            // difference is padded.
+            .padding(.top, max(0, Rail.top - topInset))
+
+            Spacer(minLength: Rail.gap)
+
+            VStack(spacing: Rail.spacing) {
+                let tools = model.visibleGames.count + 1
+                toolTile("Dependencies", symbol: "shippingbox", tag: .tool(.dependencies), index: tools)
+                toolTile("Help & Performance", symbol: "lifepreserver", tag: .tool(.support), index: tools + 1)
+                toolTile("Diagnostics", symbol: "stethoscope", tag: .tool(.diagnostics), index: tools + 2)
+                SettingsLink {
+                    tileChrome(id: "settings", index: tools + 3, selected: false) {
+                        toolSymbol("gearshape", selected: false)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Settings")
+                .help("Settings")
             }
+            .padding(Rail.pad)
+            .frame(width: 64)
+            .glassEffect(.regular, in: capsuleShape)
+            .padding(.bottom, bottomPad)
         }
-        .listStyle(.sidebar)
+        .padding(.leading, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onGeometryChange(for: CGSize.self) {
+            CGSize(width: $0.safeAreaInsets.top, height: $0.size.height)
+        } action: {
+            topInset = $0.width
+            frameBottom = $0.width + $0.height
+        }
+        .motionAnimation(.spring(duration: 0.45, bounce: 0.2), value: page)
+        .task { appeared = true }
         .background { shortcuts }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // The app's own icon, so the sidebar says whose window it is.
-            HStack(spacing: 8) {
+    }
+
+    private var homeTile: some View {
+        Button { page = .home } label: {
+            tileChrome(id: "home", index: 0, selected: page == .home) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
-                    .frame(width: 28, height: 28)
-                    .accessibilityHidden(true)
-                Text(verbatim: Brand.appName)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                    .frame(width: 34, height: 34)
+                    .clipShape(.rect(cornerRadius: 9, style: .continuous))
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Home")
+        .help("Home")
+    }
+
+    /// A 48 pt hit target: the icon, the morphing selection glass under it and the
+    /// one-time entrance stagger. Hover raises a faint fill on idle tiles only.
+    private func tileChrome<Icon: View>(id: String, index: Int, selected: Bool,
+        @ViewBuilder icon: () -> Icon) -> some View {
+        icon()
+            .frame(width: 48, height: 48)
+            .background { tileBackground(id: id, selected: selected) }
+            .contentShape(.rect)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .opacity(appeared ? 1 : 0)
+            .offset(x: appeared ? 0 : -8)
+            .motionAnimation(.spring(duration: 0.5, bounce: 0.15).delay(Double(index) * 0.04), value: appeared)
+            .onHover { inside in hovered = inside ? id : nil }
+            .motionAnimation(.easeOut(duration: 0.15), value: hovered == id)
+    }
+
+    @ViewBuilder private func tileBackground(id: String, selected: Bool) -> some View {
+        if selected {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.clear)
+                .glassEffect(.regular.tint(accent.opacity(0.32)).interactive(),
+                    in: .rect(cornerRadius: 14, style: .continuous))
+                .glassEffectID("selection", in: namespace)
+        } else {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.primary.opacity(hovered == id ? 0.08 : 0))
         }
     }
 
-    /// ⌘1, ⌘2, ⌘3 pick a game without the pointer.
+    /// Filled variant when one exists (stethoscope has none); tint follows the theme.
+    private func toolSymbol(_ symbol: String, selected: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 21, weight: .medium))
+            .symbolRenderingMode(.hierarchical)
+            .symbolVariant(selected ? .fill : .none)
+            .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(accent))
+    }
+
+    private func toolTile(_ title: LocalizedStringKey, symbol: String, tag target: Page, index: Int) -> some View {
+        Button { page = target } label: {
+            tileChrome(id: "tool-\(symbol)", index: index, selected: page == target) {
+                toolSymbol(symbol, selected: page == target)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .help(title)
+    }
+
+    /// The tooltip still says what the icon hides.
+    private func help(for game: LauncherGame) -> String {
+        let subtitle = model.statusSubtitle(for: game)
+        return subtitle.map { "\(game.name) — \($0)" } ?? game.name
+    }
+
+    /// ⌘1…⌘9 pick a game without the pointer.
     private var shortcuts: some View {
         ForEach(Array(model.visibleGames.prefix(9).enumerated()), id: \.element.id) { index, game in
             Button(game.name) { page = .game(game.id) }
@@ -89,7 +226,7 @@ struct GameSidebar: View {
         }
     }
 
-    private func badge(for game: LauncherGame) -> RowBadge {
+    private func badge(for game: LauncherGame) -> RailBadge {
         switch model.launchState(for: game.id) {
         case .running, .ready: return .playing
         case .starting, .recoveryNeeded: return .busy(nil)
@@ -120,54 +257,43 @@ extension AppModel {
     }
 }
 
-private enum RowBadge: Equatable {
+private enum RailBadge: Equatable {
     case none, playing, update
     case busy(Double?)
 }
 
-private struct GameRow: View {
+private struct RailGameIcon: View {
     let game: LauncherGame
     let art: GameArt?
-    let badge: RowBadge
-    let subtitle: String?
+    let badge: RailBadge
 
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(game.tint.gradient)
-                if let url = art?.icon {
-                    LocalImage(url: url)
-                } else {
-                    Text(game.name.prefix(1))
-                        .font(.headline)
-                        .foregroundStyle(game.deepTint)
-                }
-            }
-            .frame(width: 34, height: 34)
-            .clipShape(.rect(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(game.name).lineLimit(1)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 0)
-            badgeView
+        ZStack {
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(game.tint.opacity(0.25))
+            if let url = art?.icon { LocalImage(url: url) }
         }
-        .padding(.vertical, 2)
+        .frame(width: 34, height: 34)
+        .clipShape(.rect(cornerRadius: 9, style: .continuous))
+        .overlay(alignment: .bottomTrailing) { cornerBadge }
     }
 
-    @ViewBuilder private var badgeView: some View {
+    /// The status dot/ring rides the icon's corner — the rail has no room for a trailing badge.
+    @ViewBuilder private var cornerBadge: some View {
         switch badge {
         case .none: EmptyView()
-        case .playing: Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(.green)
-        case .update: Image(systemName: "circle.fill").font(.system(size: 8)).foregroundStyle(.orange)
+        case .playing: badgeDot(.green)
+        case .update: badgeDot(.orange)
         case .busy(let fraction):
-            if let fraction { ProgressView(value: fraction).progressViewStyle(.circular).controlSize(.mini) }
-            else { ProgressView().controlSize(.mini) }
+            Group {
+                if let fraction { ProgressView(value: fraction).progressViewStyle(.circular) }
+                else { ProgressView() }
+            }
+            .controlSize(.mini)
+            .offset(x: 2, y: 2)
         }
+    }
+
+    private func badgeDot(_ color: Color) -> some View {
+        Circle().fill(color).frame(width: 10, height: 10).offset(x: 2, y: 2)
     }
 }

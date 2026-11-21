@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
-import LauncherCore
+import AppKit
 import DownloadEngine
+import GameLibrary
+import Launch
+import LauncherCore
 import RuntimeManager
 import SwiftUI
 
-/// Everything games need besides their own files, one card per dependency.
-/// The card leads with what games use now; older and newer versions sit below it.
+/// Every runtime MacGacha4Life manages, as native grouped-Form sections: what each game needs,
+/// the runtime families it can pick from, and the disk space installed versions hold.
 struct DependenciesView: View {
     @Environment(AppModel.self) private var model
     /// Opens a game's setup sheet, which lists what it needs and asks for Apple's terms when they apply.
     let setUp: (String) -> Void
+
+    @State private var width: CGFloat = 1200
 
     var body: some View {
         Group {
@@ -18,30 +23,42 @@ struct DependenciesView: View {
                 ProgressView("Checking installed dependencies…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        Readiness(setUp: setUp)
-                        ForEach(RuntimeCategory.allCases, id: \.self) { category in
-                            let groups = groups(in: category)
-                            if !groups.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(category.title).font(.headline)
-                                    Text(category.explanation)
-                                        .font(.callout)
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 380), spacing: 12, alignment: .top)], spacing: 12) {
-                                        ForEach(groups) { group in DependencyCard(group: group) }
-                                    }
-                                }
+                VStack(alignment: .leading, spacing: 16) {
+                    gamesSection
+                    if width >= 1180 {
+                        // Two balanced columns: Runtimes + Storage left (narrow;
+                        // its names are short), Compatibility + Extras right.
+                        // Below ~1180 pt a second column cannot host the trailing
+                        // columns without truncating titles, so rows go full width.
+                        HStack(alignment: .top, spacing: 0) {
+                            Form {
+                                categorySections(in: [.runtimes])
+                                StorageSection()
                             }
+                            .formStyle(.grouped)
+                            .frame(width: 560)
+                            Form {
+                                categorySections(in: [.compatibility, .extras])
+                            }
+                            .formStyle(.grouped)
                         }
+                    } else {
+                        Form {
+                            categorySections(in: RuntimeCategory.allCases)
+                            StorageSection()
+                        }
+                        .formStyle(.grouped)
                     }
-                    .padding(20)
                 }
+                .themedSurface()
+                .frame(maxWidth: 1200)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
+        .pageBackground()
         .navigationTitle("Dependencies")
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .toolbar {
             ToolbarItem {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -53,41 +70,183 @@ struct DependenciesView: View {
         }
     }
 
+    /// A full-width row of equal game cards above the two columns; the cards
+    /// stack into full-width rows below 1000 pt of width.
+    private var gamesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Games").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if model.canSetUpAll {
+                    Button("Set Up All") { model.setUpAllRuntimes() }
+                        .buttonStyle(.mgPrimary)
+                        .controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 4)
+            if width >= 1100 {
+                HStack(spacing: 16) {
+                    ForEach(model.visibleGames) { game in GameSetupCard(game: game, setUp: setUp) }
+                }
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(model.visibleGames) { game in GameSetupCard(game: game, setUp: setUp) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func categorySections(in categories: [RuntimeCategory]) -> some View {
+        ForEach(categories, id: \.self) { category in
+            let groups = groups(in: category)
+            if !groups.isEmpty {
+                Section(category.title) {
+                    ForEach(groups) { group in DependencyGroupRow(group: group) }
+                }
+            }
+        }
+    }
+
     private func groups(in category: RuntimeCategory) -> [RuntimeVersionGroup] {
         RuntimeVersionGroup.group(model.rows).filter { $0.category == category }
     }
 }
 
-private struct DependencyCard: View {
+// MARK: - Games
+
+/// One game as an equal-width card: icon, name and status on line 1, the
+/// graphics picker across the card on line 2, and the download note under it.
+private struct GameSetupCard: View {
+    @Environment(AppModel.self) private var model
+    let game: LauncherGame
+    let setUp: (String) -> Void
+
+    private func backend(_ game: LauncherGame) -> Binding<RuntimeBackend> {
+        Binding(
+            get: { model.launchSettings(for: game.id).backend },
+            set: { value in
+                var settings = model.launchSettings(for: game.id)
+                settings.backend = value
+                do { try model.saveLaunchSettings(settings, for: game.id) } catch { model.show(error) }
+            }
+        )
+    }
+
+    var body: some View {
+        let plan = model.runtimeSetupPlan(for: game.id)
+        let busy: Bool = if case .installing = model.runtimeSetupProgress[game.id] { true } else { false }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Group {
+                    if let icon = model.gameArt[game.id]?.icon {
+                        LocalImage(url: icon)
+                    } else {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous).fill(game.tint.opacity(0.25))
+                    }
+                }
+                .frame(width: 28, height: 28)
+                .clipShape(.rect(cornerRadius: 7, style: .continuous))
+                .accessibilityHidden(true)
+                Text(game.name).font(.callout.weight(.semibold)).lineLimit(1)
+                Spacer(minLength: 8)
+                trailing(plan: plan)
+            }
+            Picker("Graphics", selection: backend(game)) {
+                Text("D3DMetal", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.d3dmetal)
+                Text("DXMT", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.dxmt)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .disabled(busy)
+            if let size = plan?.totalSize, plan?.items.isEmpty == false {
+                Text("About \(ByteSize.text(size)) to download", comment: "Download size in a game setup row's subtitle; the argument is a size")
+                    .detailStyle()
+            }
+        }
+        .padding(12)
+        .themedCard()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private func trailing(plan: RuntimeSetupPlan?) -> some View {
+        if case .installing(let item, let step, let total, let fraction) = model.runtimeSetupProgress[game.id] {
+            VStack(alignment: .trailing, spacing: 2) {
+                Group {
+                    if let fraction { ProgressView(value: fraction) } else { ProgressView() }
+                }
+                .frame(width: 120)
+                Text("\(item) (\(step)/\(total))", comment: "Setup progress; the arguments are the item and its step of total")
+                    .detailStyle()
+            }
+            Button("Cancel") { model.cancelRuntimeSetup(for: game.id) }
+                .buttonStyle(.mgSecondary)
+                .controlSize(.small)
+        } else if let plan {
+            if !plan.items.isEmpty {
+                Button("Set Up…") { setUp(game.id) }
+                    .buttonStyle(.mgSecondary)
+                    .controlSize(.small)
+                    .frame(minWidth: 84)
+            }
+        } else if model.missingComponents(for: game.id) {
+            Label("Not installed", systemImage: "exclamationmark.circle.fill")
+                .labelStyle(TintedIconLabelStyle(tint: .orange))
+                .detailStyle()
+        } else {
+            Label("Ready", systemImage: "checkmark.circle.fill")
+                .labelStyle(TintedIconLabelStyle(tint: .green))
+                .detailStyle()
+        }
+    }
+}
+
+// MARK: - Runtime families
+
+/// One runtime family as a list row: icon, active version, state, users, action and a quiet menu;
+/// the version list folds away behind a disclosure.
+private struct DependencyGroupRow: View {
     @Environment(AppModel.self) private var model
     let group: RuntimeVersionGroup
     @State private var removing: RuntimeRow?
+    @State private var expanded = false
+    @State private var size: Int64?
 
     private var hasCatalog: Bool { model.runtimeCatalog != nil }
     private var status: RuntimeVersionGroup.Status {
         group.status(selected: model.runtimeIsSelected, recommended: model.runtimeIsRecommended, hasCatalog: hasCatalog)
     }
     private var active: RuntimeRow? { group.active(selected: model.runtimeIsSelected, hasCatalog: hasCatalog) }
-    /// One version needs no list: the header already says everything about it.
     private var showsVersions: Bool { group.rows.count > 1 }
+
+    /// Only bundles publish their installed folder; standalone components stay unmeasured.
+    private var bundleFolder: URL? {
+        guard let active else { return nil }
+        return model.installedBundles[active.id]?.root
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(14)
+            main
             if showsVersions {
-                Divider().padding(.horizontal, 14)
-                VStack(spacing: 0) {
-                    ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
-                        if index > 0 { Divider().padding(.leading, 40) }
-                        VersionRow(row: row, isActive: row.id == active?.id, remove: { removing = row })
+                DisclosureGroup(isExpanded: $expanded) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+                            if index > 0 { Divider() }
+                            VersionRow(row: row, isActive: row.id == active?.id, remove: { removing = row })
+                        }
                     }
+                } label: {
+                    Text("Versions").font(.callout).foregroundStyle(.secondary)
                 }
+                // Indented to the title column, past the 28 pt icon and its gap.
+                .padding(.leading, 40)
                 .padding(.vertical, 4)
             }
         }
-        .background(.background.secondary, in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+        .task(id: bundleFolder) {
+            size = nil
+            if let bundleFolder { size = await FolderSize.measure(bundleFolder) }
+        }
         .confirmationDialog(removalTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) {
                 if let removing { Task { await model.remove(removing.id) } }
@@ -102,45 +261,74 @@ private struct DependencyCard: View {
         return String(localized: "Remove \(removing.kindName) \(removing.version)?")
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
+    private var main: some View {
+        HStack(alignment: .center, spacing: 12) {
             DependencyIcon(familyID: group.id)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(group.rows[0].kindName).font(.headline)
+                    Text(group.rows[0].kindName).font(.callout.weight(.semibold)).lineLimit(1)
                     badge
                 }
-                if let about = DependencyIcon.about(group.id) {
-                    Text(about)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let users = usedBy {
-                    Text("Used by \(users)", comment: "Dependency note; the argument is a list of game names")
-                        .detailStyle()
-                }
-                detail.padding(.top, 2)
+                detail
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
+            // Fixed trailing columns: size, games using it, then the actions cell
+            // and menu — identical right edges in every row of every card. A rare
+            // second button (GPTK import) grows the actions cell left, never right.
+            Text(size.map(ByteSize.text) ?? "")
+                .detailStyle().monospacedDigit()
+                .frame(width: 48, alignment: .trailing)
+            UsedByIcons(familyID: group.id)
+                .frame(width: 62, alignment: .trailing)
             actions
+                .frame(minWidth: 84, alignment: .trailing)
+            ActiveMenu(row: activeRowForMenu, remove: { removing = activeRowForMenu }, reveal: bundleFolder)
+                .frame(width: 24)
         }
     }
 
-    /// The games this dependency serves, so removing or updating it has no surprises.
-    private var usedBy: String? {
-        let games = model.visibleGames.filter { game in
-            guard let family = GameDefinition.find(game.id)?.family else { return false }
-            switch group.id {
-            case "bundle-dxmt": return model.launchSettings(for: game.id).backend == .dxmt
-            case "bundle-d3dmetal": return model.launchSettings(for: game.id).backend == .d3dmetal
-            case "component-jadeite": return family == .starrail
-            case "component-genshinFps": return family == .genshin
-            case "component-steamShim", "component-crypt32Fix", "component-surroundAudio": return family != .starrail
-            default: return false
+    /// The menu acts on the version in use, or the only row when there is none.
+    private var activeRowForMenu: RuntimeRow { active ?? group.rows[0] }
+
+    /// The games this dependency serves, side by side so removing it has no surprises.
+    private struct UsedByIcons: View {
+        @Environment(AppModel.self) private var model
+        let familyID: String
+
+        private var games: [LauncherGame] {
+            model.visibleGames.filter { game in
+                guard let family = GameDefinition.find(game.id)?.family else { return false }
+                switch familyID {
+                case "bundle-dxmt": return model.launchSettings(for: game.id).backend == .dxmt
+                case "bundle-d3dmetal": return model.launchSettings(for: game.id).backend == .d3dmetal
+                case "component-jadeite": return family == .starrail
+                case "component-genshinFps": return family == .genshin
+                case "component-steamShim", "component-crypt32Fix", "component-surroundAudio": return family != .starrail
+                default: return false
+                }
             }
         }
-        return games.isEmpty ? nil : games.map(\.name).formatted(.list(type: .and))
+
+        var body: some View {
+            if !games.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(games) { game in
+                        Group {
+                            if let icon = model.gameArt[game.id]?.icon {
+                                LocalImage(url: icon)
+                            } else {
+                                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(game.tint.opacity(0.25))
+                            }
+                        }
+                        .frame(width: 18, height: 18)
+                        .clipShape(.rect(cornerRadius: 5, style: .continuous))
+                        .help(game.name)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder private var badge: some View {
@@ -165,13 +353,22 @@ private struct DependencyCard: View {
                 .textSelection(.enabled)
                 .detailStyle()
         case .notInstalled(let row):
-            Text(DependencyText.download(row)).detailStyle()
+            // The license moves to the tooltip: the size must never be squeezed.
+            Text(downloadText(row)).detailStyle()
+                .help(Text(verbatim: DependencyText.license(row)))
         case .ready(let row), .updateAvailable(let row, _):
-            // With a version list the checked row already says this.
-            if !showsVersions { ActiveVersionLine(row: row) }
+            ActiveVersionLine(row: row)
         case .damaged:
             Text("A copy on disk is damaged. Remove it, then set it up again.").detailStyle()
         }
+    }
+
+    /// One right-aligned cell: the rare GPTK import joins Set Up without moving
+    /// the cell's right edge, so every button ends at the same x.
+    /// "About 48 kB to download" — without the license, which sits in the tooltip.
+    private func downloadText(_ row: RuntimeRow) -> String {
+        guard let size = row.downloadSize, size > 0 else { return DependencyText.license(row) }
+        return String(localized: "About \(ByteSize.text(size)) to download")
     }
 
     @ViewBuilder private var actions: some View {
@@ -179,28 +376,135 @@ private struct DependencyCard: View {
             switch status {
             case .working(let row):
                 if case .working(let phase, _) = row.state, phase != .deleting && phase != .cleaningUp {
-                    // Removing files and final cleanup always run to the end.
                     Button("Cancel") { model.cancel(row.id) }
+                        .buttonStyle(.mgSecondary).controlSize(.small)
                 }
             case .notInstalled(let row), .failed(let row, _):
                 if row.canImportGPTK {
                     Button("Import…") { model.importGPTK(row.id) }
-                        .help("Import D3DMetal from Apple's Game Porting Toolkit")
+                        .buttonStyle(.mgQuiet).controlSize(.small)
                 }
                 SetUpButton(row: row, prominent: true)
-            case .updateAvailable(let current, let newer):
+            case .updateAvailable(_, let newer):
                 Button("Update") { model.useRuntimeVersion(newer.id) }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.canUseRuntimeVersion(newer.id))
-                    .help(String(localized: "Switch to \(DependencyText.name(newer))"))
-                ActiveMenu(row: current, remove: { removing = current })
-            case .ready(let current):
-                ActiveMenu(row: current, remove: { removing = current })
-            case .damaged:
+                    .buttonStyle(.mgPrimary).controlSize(.small)
+                    .frame(minWidth: 84)
+                    .disabled(model.runtimeCatalog != nil && !model.canUseRuntimeVersion(newer.id))
+                    .help(String(localized: "Use \(DependencyText.name(newer)) for every game"))
+            case .ready, .damaged:
                 EmptyView()
             }
         }
-        .controlSize(.regular)
+        .controlSize(.small)
+    }
+}
+
+// MARK: - Storage
+
+/// What installed runtimes hold on disk, and old versions Clean Up can free.
+private struct StorageSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var sizes: [String: Int64] = [:]
+    @State private var cleaning = false
+
+    /// Only bundle folders are published; components have no manager-exposed path yet.
+    /// `name` is the family's display name, `title` adds its version for dialogs.
+    private var installed: [(id: String, name: String, title: String, size: Int64)] {
+        model.installedBundles.values.map { bundle in
+            let row = model.rows.first { $0.id == bundle.id.rawValue }
+            let name = row?.kindName ?? bundle.id.rawValue
+            let title = row.map { "\(name) \($0.version)" } ?? name
+            return (id: bundle.id.rawValue, name: name, title: title, size: sizes[bundle.id.rawValue] ?? 0)
+        }
+        .sorted { $0.title < $1.title }
+    }
+
+    private var operationRunning: Bool {
+        model.isRuntimeOperationRunning || model.isGameOperationRunning || !model.runtimeSetupProgress.isEmpty
+    }
+
+    /// The active or pinned versions, plus whatever a live game currently needs.
+    private var keepIDs: Set<String> {
+        var keep = Set<String>()
+        for group in RuntimeVersionGroup.group(model.rows) {
+            if let row = group.active(selected: model.runtimeIsSelected, hasCatalog: model.runtimeCatalog != nil) {
+                keep.insert(row.id)
+            }
+            keep.formUnion(group.rows.filter { model.runtimeIsPinned($0.id) }.map(\.id))
+        }
+        for game in model.visibleGames where model.launchState(for: game.id) != nil {
+            if let bundle = model.runtimeProfile(for: model.launchSettings(for: game.id).backend) { keep.insert(bundle) }
+        }
+        return keep
+    }
+
+    private var items: [RuntimeCleanup.Item] {
+        RuntimeCleanup.removable(installed: installed.map { (id: $0.id, title: $0.title, size: $0.size) },
+            keepIDs: keepIDs, operationRunning: operationRunning)
+    }
+
+    var body: some View {
+        Section {
+            if totalBytes > 0 {
+                VStack(alignment: .leading, spacing: 6) {
+                    ShareBar(segments: segments)
+                    // The legend names the same segments the bar draws.
+                    ForEach(installed.filter { $0.size > 0 }, id: \.id) { item in
+                        Label {
+                            Text(verbatim: item.name + " " + ByteSize.text(item.size))
+                        } icon: {
+                            Circle().fill(tint(item.id)).frame(width: 7, height: 7)
+                        }
+                        .detailStyle()
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            LabeledContent("Total") {
+                Text(totalBytes > 0 ? ByteSize.text(totalBytes) : "—").monospacedDigit()
+            }
+            Button("Clean Up…") { cleaning = true }
+                .buttonStyle(.mgSecondary)
+                .controlSize(.small)
+                .disabled(items.isEmpty)
+        } header: {
+            Text("Storage")
+        }
+        .task(id: measureKey) { await measure() }
+        .confirmationDialog("Clean Up Old Versions?", isPresented: $cleaning) {
+            ForEach(items) { item in
+                Button { Task { await model.remove(item.id) } } label: {
+                    Text("\(item.title) · \(ByteSize.text(item.size))", comment: "Joins two parts of a status line")
+                }
+            }
+        } message: {
+            Text("Free \(ByteSize.text(RuntimeCleanup.totalSize(items))). The version each game uses stays.", comment: "The argument is the total freeable size")
+        }
+    }
+
+    private var totalBytes: Int64 { installed.reduce(Int64(0)) { $0 + $1.size } }
+
+    /// One segment per measured bundle, tinted by graphics layer.
+    private var segments: [ShareBar.Segment] {
+        installed.filter { $0.size > 0 }.map { ShareBar.Segment(id: $0.id, tint: tint($0.id), value: Double($0.size)) }
+    }
+
+    private func tint(_ id: String) -> Color {
+        if id.contains("dxmt") { return .blue }
+        if id.contains("d3dmetal") { return .purple }
+        return .accentColor
+    }
+
+    private var measureKey: String {
+        model.installedBundles.keys.sorted().joined(separator: "|")
+    }
+
+    private func measure() async {
+        var next: [String: Int64] = [:]
+        for (id, bundle) in model.installedBundles {
+            next[id] = await FolderSize.measure(bundle.root)
+        }
+        sizes = next
     }
 }
 
@@ -212,21 +516,24 @@ private struct ActiveVersionLine: View {
     var body: some View {
         let pinned = model.runtimeIsPinned(row.id)
         Label {
-            Text(StatusText.joined(String(localized: "Using \(DependencyText.name(row))"), DependencyText.source(row)))
+            Text(String(localized: "Using \(DependencyText.name(row))"))
         } icon: {
             Image(systemName: pinned ? "pin.fill" : "checkmark.circle.fill")
         }
         .labelStyle(TintedIconLabelStyle(tint: pinned ? .orange : .green))
-        .help(pinned ? Text("Pinned. MacGacha4Life keeps this version even when a newer one is recommended.") : Text(verbatim: row.licenseName))
+        .help(pinned
+            ? Text(verbatim: String(localized: "Pinned. MacGacha4Life keeps this version even when a newer one is recommended.") + " " + DependencyText.source(row))
+            : Text(verbatim: DependencyText.source(row)))
         .detailStyle()
     }
 }
 
-/// Secondary actions for the version in use: pinning and removal stay out of the way.
+/// Secondary actions for the version in use: pinning, removal and the folder stay out of the way.
 private struct ActiveMenu: View {
     @Environment(AppModel.self) private var model
     let row: RuntimeRow
     let remove: () -> Void
+    let reveal: URL?
 
     var body: some View {
         Menu {
@@ -240,13 +547,18 @@ private struct ActiveMenu: View {
                 }
                 Divider()
             }
+            if let reveal {
+                Button("Show in Finder", systemImage: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([reveal])
+                }
+            }
             Button("Remove…", systemImage: "trash", role: .destructive, action: remove)
                 .disabled(!model.canRemoveRuntime(row.id))
         } label: {
-            Label("More", systemImage: "ellipsis")
-                .labelStyle(.iconOnly)
+            Image(systemName: "ellipsis")
         }
         .menuIndicator(.hidden)
+        .buttonStyle(.mgIcon)
         .fixedSize()
         .help("More actions")
     }
@@ -278,8 +590,7 @@ private struct VersionRow: View {
             Spacer(minLength: 8)
             if !isActive { trailing }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
@@ -308,28 +619,32 @@ private struct VersionRow: View {
         case .installed:
             if model.runtimeCatalog != nil {
                 Button("Use") { model.useRuntimeVersion(row.id) }
+                    .buttonStyle(.mgQuiet)
+                    .controlSize(.small)
                     .disabled(!model.canUseRuntimeVersion(row.id))
                     .help(String(localized: "Use \(DependencyText.name(row)) for every game"))
             }
             Button("Remove…", systemImage: "trash", action: remove)
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                .buttonStyle(.mgIcon)
                 .disabled(!model.canRemoveRuntime(row.id))
                 .help("Remove this version")
         case .notInstalled, .failed:
             if row.canImportGPTK {
                 Button("Import…") { model.importGPTK(row.id) }
+                    .buttonStyle(.mgSecondary).controlSize(.small)
             }
             SetUpButton(row: row, prominent: false)
         case .working(let phase, _):
             if phase != .deleting && phase != .cleaningUp {
                 Button("Cancel") { model.cancel(row.id) }
+                    .buttonStyle(.mgSecondary).controlSize(.small)
             }
         case .invalid(_, let removable):
             if removable {
                 Button("Remove…", systemImage: "trash", action: remove)
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.mgIcon)
                     .disabled(!model.canRemoveRuntime(row.id))
             }
         }
@@ -346,11 +661,13 @@ private struct SetUpButton: View {
         let title = model.runtimeCatalog != nil
             ? (retry ? String(localized: "Try Again") : String(localized: "Set Up…"))
             : (retry ? String(localized: "Try Again") : String(localized: "Install"))
-        let button = Button(title) {
+        Button(title) {
             if model.runtimeCatalog != nil { model.useRuntimeVersion(row.id) } else { model.install(row.id) }
         }
+        .buttonStyle(prominent ? .mgPrimary : .mgSecondary)
+        .controlSize(.small)
+        .frame(minWidth: 84)
         .disabled(model.runtimeCatalog != nil && !model.canUseRuntimeVersion(row.id))
-        if prominent { button.buttonStyle(.borderedProminent) } else { button }
     }
 }
 
@@ -384,58 +701,54 @@ private struct StatusBadge: View {
         Text(title)
             .font(.caption.weight(.medium))
             .foregroundStyle(tint)
+            .lineLimit(1)
+            .fixedSize()
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(tint.opacity(0.14), in: .capsule)
     }
 }
 
-/// A rounded tile in the dependency's own two colors with its own flat mark.
+/// One native SF Symbol per family, theme-tinted, centered in the fixed 28 pt
+/// leading column so every row's title starts at the same x.
 private struct DependencyIcon: View {
+    @Environment(\.appTheme) private var theme
     let familyID: String
 
+    /// Falls back to the box when a symbol name does not resolve on this macOS.
+    private var symbol: String {
+        let name = switch familyID {
+        case "bundle-dxmt", "component-dxmt": "square.stack.3d.up"
+        case "bundle-d3dmetal", "component-d3dmetal": "cpu"
+        case "component-wine": "wineglass"
+        case "component-jadeite": "shield.lefthalf.filled"
+        case "component-steamShim": "puzzlepiece.extension"
+        case "component-crypt32Fix": "checkmark.seal"
+        case "component-surroundAudio": "speaker.wave.3"
+        case "component-genshinFps": "speedometer"
+        default: "shippingbox"
+        }
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "shippingbox" : name
+    }
+
     var body: some View {
-        let style = Self.style(familyID)
-        DependencyMark(kind: style.kind)
-            .frame(width: 24, height: 24)
-            .frame(width: 44, height: 44)
-            .background(LinearGradient(colors: [style.top, style.bottom], startPoint: .top, endPoint: .bottom),
-                in: .rect(cornerRadius: 11, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
+        Image(systemName: symbol)
+            .font(.system(size: 17, weight: .medium))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(theme.palette?.accent ?? .accentColor)
+            .frame(width: 28)
             .accessibilityHidden(true)
-    }
-
-    private static func style(_ id: String) -> (kind: DependencyGlyph.Kind, top: Color, bottom: Color) {
-        switch id {
-        case "bundle-dxmt", "component-dxmt": (.dxmt, .cyan, .blue)
-        case "bundle-d3dmetal", "component-d3dmetal": (.d3dmetal, .pink, .purple)
-        case "component-wine": (.wine, .orange, .red)
-        case "component-jadeite": (.jadeite, .mint, .teal)
-        case "component-steamShim": (.steamShim, .blue, .indigo)
-        case "component-crypt32Fix": (.crypt32, .yellow, .orange)
-        case "component-surroundAudio": (.surround, .red, .pink)
-        case "component-genshinFps": (.fps, .orange, .red)
-        default: (.other, .gray, .gray)
-        }
-    }
-
-    static func about(_ id: String) -> String? {
-        switch id {
-        case "bundle-dxmt": String(localized: "Wine with DXMT, which runs DirectX 11 games on Metal.", comment: "Dependency description")
-        case "bundle-d3dmetal": String(localized: "Wine with Apple's D3DMetal, which runs DirectX 11 and 12 games on Metal.", comment: "Dependency description")
-        case "component-jadeite": String(localized: "Lets Honkai: Star Rail start under Wine. You can turn it off in the game's settings.", comment: "Dependency description")
-        case "component-steamShim": String(localized: "Lets Genshin Impact and Zenless Zone Zero start under Wine. You can turn it off in the game's settings.", comment: "Dependency description")
-        case "component-crypt32Fix": String(localized: "Fixes a Wine signature check that the Mainland China editions of Genshin Impact and Zenless Zone Zero need.", comment: "Dependency description")
-        case "component-surroundAudio": String(localized: "Surround sound with Spatial Audio for Genshin Impact and Zenless Zone Zero, used when you turn it on in a game's settings.", comment: "Dependency description")
-        case "component-genshinFps": String(localized: "Raises Genshin Impact's frame-rate limit, used only when you turn it on in the game's settings.", comment: "Dependency description")
-        default: nil
-        }
     }
 }
 
 enum DependencyText {
     /// A bundle names its contents in the summary instead of a bare version.
     static func name(_ row: RuntimeRow) -> String { row.summary ?? row.version }
+
+    /// The license (or the consent label) shown in row tooltips.
+    static func license(_ row: RuntimeRow) -> String {
+        row.needsConsent ? String(localized: "Apple license") : row.licenseName
+    }
 
     static func source(_ row: RuntimeRow) -> String {
         if case .installed(.importFromGPTK) = row.state { return String(localized: "Imported from Game Porting Toolkit") }
@@ -477,14 +790,6 @@ private extension RuntimeCategory {
         case .extras: String(localized: "Extras", comment: "Dependencies category")
         }
     }
-
-    var explanation: String {
-        switch self {
-        case .runtimes: String(localized: "Wine with a graphics layer. Each game uses the one chosen in its settings.", comment: "Dependencies category")
-        case .compatibility: String(localized: "Small helpers some games need to start.", comment: "Dependencies category")
-        case .extras: String(localized: "Optional features. Each is set up only when you turn it on for a game.", comment: "Dependencies category")
-        }
-    }
 }
 
 private extension View {
@@ -509,82 +814,4 @@ private struct TintedIconLabelStyle: LabelStyle {
     DependenciesView { _ in }
         .environment(AppModel.preview())
         .frame(width: 720, height: 520)
-}
-
-/// One tile per game: the graphics layer it uses, then ready, setting up, or what it still needs with a button
-/// that opens its setup. Choosing the other graphics layer changes what the game needs.
-private struct Readiness: View {
-    @Environment(AppModel.self) private var model
-    let setUp: (String) -> Void
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12, alignment: .top)], spacing: 12) {
-            ForEach(model.visibleGames) { game in tile(game) }
-        }
-    }
-
-    private func backend(_ game: LauncherGame) -> Binding<RuntimeBackend> {
-        Binding(
-            get: { model.launchSettings(for: game.id).backend },
-            set: { value in
-                var settings = model.launchSettings(for: game.id)
-                settings.backend = value
-                do { try model.saveLaunchSettings(settings, for: game.id) } catch { model.show(error) }
-            }
-        )
-    }
-
-    private func tile(_ game: LauncherGame) -> some View {
-        let plan = model.runtimeSetupPlan(for: game.id)
-        let busy: Bool = if case .installing = model.runtimeSetupProgress[game.id] { true } else { false }
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(game.tint.gradient)
-                    if let icon = model.gameArt[game.id]?.icon { LocalImage(url: icon) }
-                }
-                .frame(width: 36, height: 36)
-                .clipShape(.rect(cornerRadius: 9, style: .continuous))
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(game.name).font(.headline).lineLimit(1)
-                    if let plan {
-                        Text(plan.items.map(\.name).formatted(.list(type: .and))).detailStyle().lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 8)
-                trailing(game, plan: plan)
-            }
-            Picker("Graphics", selection: backend(game)) {
-                Text("D3DMetal", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.d3dmetal)
-                Text("DXMT", comment: "Graphics backend name; usually not translated").tag(RuntimeBackend.dxmt)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(busy)
-        }
-        .padding(14)
-        .background(.background.secondary, in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.6)))
-    }
-
-    @ViewBuilder private func trailing(_ game: LauncherGame, plan: RuntimeSetupPlan?) -> some View {
-        if case .installing(_, _, _, let fraction) = model.runtimeSetupProgress[game.id] {
-            if let fraction { ProgressView(value: fraction).frame(width: 80) } else { ProgressView().controlSize(.small) }
-        } else if let plan {
-            VStack(alignment: .trailing, spacing: 2) {
-                Button("Set Up…") { setUp(game.id) }
-                    .buttonStyle(.borderedProminent)
-                if let size = plan.totalSize { Text(ByteSize.text(size)).detailStyle().monospacedDigit() }
-            }
-        } else if model.missingComponents(for: game.id) {
-            Label("Not installed", systemImage: "exclamationmark.circle.fill")
-                .labelStyle(TintedIconLabelStyle(tint: .orange))
-                .detailStyle()
-        } else {
-            Label("Ready", systemImage: "checkmark.circle.fill")
-                .labelStyle(TintedIconLabelStyle(tint: .green))
-                .detailStyle()
-        }
-    }
 }

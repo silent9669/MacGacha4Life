@@ -67,27 +67,61 @@ struct SupportView: View {
         return parts?.url
     }
 
+    @State private var width: CGFloat = 1200
+
     var body: some View {
-        Form {
-            Section {
-                WebLink(title: "Search the Web", symbol: "magnifyingglass", url: searchURL)
-                WebLink(title: "Known Issues", symbol: "exclamationmark.bubble", url: issuesURL)
-                WebLink(title: "Report a Problem", symbol: "square.and.pencil", url: reportURL)
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(systemInfo, forType: .string)
-                    copied = true
-                } label: {
-                    HStack {
-                        Label("Copy System Info", systemImage: "doc.on.doc")
-                        Spacer()
-                        if copied { Image(systemName: "checkmark").foregroundStyle(.green).accessibilityHidden(true) }
-                    }
-                    .contentShape(.rect)
+        Group {
+            if width >= 1000 {
+                HStack(alignment: .top, spacing: 0) {
+                    Form { linksSection }
+                        .formStyle(.grouped)
+                        .frame(width: 420)
+                    Form { checklistSection }
+                        .formStyle(.grouped)
                 }
-                .buttonStyle(.plain)
+            } else {
+                Form {
+                    linksSection
+                    checklistSection
+                }
+                .formStyle(.grouped)
             }
-            Section("Performance checklist") {
+        }
+        .pageBackground()
+        .themedSurface()
+        .navigationTitle("Help & Performance")
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .toolbar {
+            ToolbarItem {
+                Button("Settings", systemImage: "gearshape", action: openGameSettings)
+            }
+        }
+    }
+
+    private var linksSection: some View {
+        Section {
+            WebLink(title: "Search the Web", symbol: "magnifyingglass", url: searchURL)
+            WebLink(title: "Known Issues", symbol: "exclamationmark.bubble", url: issuesURL)
+            WebLink(title: "Report a Problem", symbol: "square.and.pencil", url: reportURL)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(systemInfo, forType: .string)
+                copied = true
+            } label: {
+                HStack {
+                    Label("Copy System Info", systemImage: "doc.on.doc")
+                    Spacer()
+                    if copied { Image(systemName: "checkmark").foregroundStyle(.green).accessibilityHidden(true) }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var checklistSection: some View {
+        Section("Performance checklist") {
                 row("Free on this volume", symbol: "internaldrive", good: (freeBytes ?? .max) > 20_000_000_000) {
                     if let freeBytes { Text(freeBytes, format: .byteCount(style: .file)) } else { Text(verbatim: "–") }
                 }
@@ -110,14 +144,6 @@ struct SupportView: View {
                     Text(settings.metalHUD ? "On" : "Off")
                 }
             }
-        }
-        .formStyle(.grouped)
-        .navigationTitle("Help & Performance")
-        .toolbar {
-            ToolbarItem {
-                Button("Settings", systemImage: "gearshape", action: openGameSettings)
-            }
-        }
     }
 
     private func row<V: View>(_ title: LocalizedStringKey, symbol: String, good: Bool, @ViewBuilder value: () -> V) -> some View {

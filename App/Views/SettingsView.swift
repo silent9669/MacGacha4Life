@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // MacGacha — https://github.com/deruta74/MacGacha — see LICENSE and NOTICE (additional term under GPL section 7(b)).
 import AppKit
+import Launch
 import LauncherCore
 import SwiftUI
 
@@ -13,18 +14,33 @@ struct SettingsView: View {
     @AppStorage("animatedBackgroundsChosen") private var animatedChosen = false
     @AppStorage("reduceMotion") private var reduceMotionSetting = false
     @State private var language = InterfaceLanguageSettings()
+    @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
+    @State private var importError = false
+    /// `-MacGachaDebugSettingsTab games` opens a tab directly, for screenshots.
+    @State private var tab: String = {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "MacGachaDebugSettingsTab") ?? "general"
+        #else
+        return "general"
+        #endif
+    }()
 
     var body: some View {
-        TabView {
-            Tab("General", systemImage: "gearshape") { general }
-            Tab("Games", systemImage: "gamecontroller") { games }
-            Tab("Updates", systemImage: "arrow.triangle.2.circlepath") { updates }
-            Tab("About", systemImage: "info.circle") { AboutCard() }
+        TabView(selection: $tab) {
+            Tab("General", systemImage: "gearshape", value: "general") { general }
+            Tab("Games", systemImage: "gamecontroller", value: "games") { games }
+            Tab("Updates", systemImage: "arrow.triangle.2.circlepath", value: "updates") { updates }
+            Tab("About", systemImage: "info.circle", value: "about") { AboutCard().pageBackground() }
         }
         .scenePadding()
         .frame(width: 540)
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { model.setInstallRoot(url) }
+        }
+        .alert("Couldn't Import Settings", isPresented: $importError) {
+            Button("OK") {}
+        } message: {
+            Text("The file isn't a MacGacha4Life settings backup, or it was written by a newer version.")
         }
     }
 
@@ -32,6 +48,47 @@ struct SettingsView: View {
         Text(text)
             .font(.caption)
             .foregroundStyle(.secondary)
+    }
+
+    private func backup() -> SettingsBackup {
+        var games: [String: LaunchSettings] = [:]
+        for game in LauncherGame.all { games[game.id] = model.launchSettings(for: game.id) }
+        return SettingsBackup(games: games, theme: appTheme, reduceMotion: reduceMotionSetting,
+            animatedBackgrounds: animatedBackgrounds)
+    }
+
+    private func exportSettings() {
+        guard let data = try? backup().encode() else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "MacGacha4Life Settings.json"
+        panel.allowedContentTypes = [.json]
+        if panel.runModal() == .OK, let url = panel.url {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    private func importSettings() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url,
+            let data = try? Data(contentsOf: url),
+            let snapshot = try? SettingsBackup.decode(data) else {
+            importError = true
+            return
+        }
+        for (id, settings) in snapshot.games { try? model.saveLaunchSettings(settings, for: id) }
+        appTheme = AppTheme(rawValue: snapshot.theme)?.rawValue ?? AppTheme.system.rawValue
+        reduceMotionSetting = snapshot.reduceMotion
+        animatedBackgrounds = snapshot.animatedBackgrounds
+    }
+
+    private func exportStats() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "MacGacha4Life Stats.csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        if panel.runModal() == .OK, let url = panel.url {
+            try? StatsCSV.document(playTime.sessions).write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     private var general: some View {
@@ -52,19 +109,23 @@ struct SettingsView: View {
             }
             .onAppear { language.reload() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in language.reload() }
+            Section("Theme") {
+                ThemePicker()
+            }
             Section {
                 Toggle("Animated backgrounds", isOn: Binding(
                     get: { animatedBackgrounds },
                     set: { animatedBackgrounds = $0; animatedChosen = true }
                 ))
+                Toggle("Reduce Motion", isOn: $reduceMotionSetting)
             } footer: {
                 note("Plays the game's animated art when HoYoPlay provides it. Still images use less power.")
             }
-            Section {
-                Toggle("Reduce Motion", isOn: $reduceMotionSetting)
-            }
         }
         .formStyle(.grouped)
+        .pageBackground()
+        .themedSurface()
+        .scrollIndicators(.never)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -111,16 +172,37 @@ struct SettingsView: View {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([model.installRoot])
                     }
+                    .buttonStyle(.mgSecondary)
                     Button("Choose…") { choosing = true }
+                    .buttonStyle(.mgSecondary)
                 }
             } footer: {
                 note("Games need a lot of space. Pick a drive with at least 100 GB free.")
             }
             Section {
                 Button("Reset Stats…", role: .destructive) { confirmingReset = true }
+                    .buttonStyle(.mgDestructive)
+            }
+            Section {
+                HStack {
+                    Button("Export Settings…") { exportSettings() }
+                        .buttonStyle(.mgSecondary)
+                    Button("Import Settings…") { importSettings() }
+                        .buttonStyle(.mgSecondary)
+                    Spacer()
+                    Button("Export Stats…") { exportStats() }
+                        .buttonStyle(.mgSecondary)
+                }
+            } header: {
+                Text("Data")
+            } footer: {
+                note("Settings and playtime stay on this Mac. A backup holds your launch settings and preferences, never paths or history.")
             }
         }
         .formStyle(.grouped)
+        .pageBackground()
+        .themedSurface()
+        .scrollIndicators(.never)
         .fixedSize(horizontal: false, vertical: true)
         .confirmationDialog("Reset Stats?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { playTime.reset() }
@@ -140,6 +222,7 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button("Check Now") { model.checkForUpdates() }
+                        .buttonStyle(.mgSecondary)
                         .disabled(!model.canCheckForUpdates)
                 }
             } footer: {
@@ -147,6 +230,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .pageBackground()
+        .themedSurface()
+        .scrollIndicators(.never)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -200,6 +286,7 @@ private struct LanguageRestartRow: View {
                 ProgressView().controlSize(.small)
             } else {
                 Button("Restart Now") { Task { await model.restartForLanguage() } }
+                    .buttonStyle(.mgPrimary)
                     .disabled(model.languageRestartBlocker != nil)
             }
         }

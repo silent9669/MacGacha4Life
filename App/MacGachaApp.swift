@@ -11,7 +11,11 @@ struct MacGachaApp: App {
     @State private var model = Self.makeModel()
     /// One store for the launcher window and Settings, so both see the same playtime.
     @State private var playTime = Self.makePlayTimeStore()
+    @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @NSApplicationDelegateAdaptor(LauncherAppDelegate.self) private var delegate
+
+    /// Unknown stored values mean no theme at all.
+    private var theme: AppTheme { AppTheme(rawValue: appTheme) ?? .system }
 
     private static func makeModel() -> AppModel {
         #if DEBUG
@@ -34,6 +38,7 @@ struct MacGachaApp: App {
             LauncherWindowContent()
                 .environment(model)
                 .environment(playTime)
+                .appTheme(theme)
                 // Startup belongs to the window, not to the launcher view the loading screen replaces.
                 .task {
                     delegate.bind(model)
@@ -53,12 +58,14 @@ struct MacGachaApp: App {
             SettingsView()
                 .environment(model)
                 .environment(playTime)
+                .appTheme(theme)
         }
 
         // Quick Play from the menu bar, without bringing the launcher forward first.
         MenuBarExtra {
             QuickPlayMenu()
                 .environment(model)
+                .environment(playTime)
         } label: {
             Image("MenuBarIcon")
         }
@@ -68,7 +75,9 @@ struct MacGachaApp: App {
 /// One row per game: Play it right away when it's ready, otherwise open the launcher where it needs attention.
 private struct QuickPlayMenu: View {
     @Environment(AppModel.self) private var model
+    @Environment(PlayTimeStore.self) private var playTime
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.calendar) private var calendar
 
     private func action(for game: LauncherGame) -> PrimaryAction {
         .resolve(model.games[game.id] ?? GameState(status: .unknown), runtimesReady: model.runtimesReady,
@@ -90,6 +99,12 @@ private struct QuickPlayMenu: View {
     }
 
     var body: some View {
+        let today = playTime.stats(calendar: calendar).dailyTotals(days: 1).first?.seconds ?? 0
+        Button(action: show) {
+            Label("Today \(Duration.seconds(today).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))",
+                systemImage: "clock")
+        }
+        Divider()
         ForEach(model.visibleGames) { game in
             let action = action(for: game)
             Button {

@@ -19,8 +19,11 @@
 
 ## Funktionen
 
-- **Start.** Jedes Spiel als Karte mit Play per Klick, deine Spielzeit, freier Speicher und die neuesten HoYoPlay-Events.
-- **Eine Seite pro Spiel.** Randlose Artworks, eine gläserne Aktionsleiste und Karten für Grafik, Framelimit, Leistungs-Overlay, Spielzeit und Größe auf dem Datenträger.
+- **Start.** Eine Übersicht: was deine Aufmerksamkeit braucht, deine Spiele mit dem Platz, den jedes belegt, die neuesten HoYoPlay-Highlights und deine Spielzeit-Statistik – mit Play per Klick.
+- **Eine Seite pro Spiel.** Randloses Artwork und eine gläserne Aktionsleiste über jeder Starteinstellung, dazu deine Spielzeit pro Woche oder Monat und ein Kalender der Tage, an denen du gespielt hast – alles in einem Fenster.
+- **Abhängigkeiten.** Eine Seite für Wine, DXMT, D3DMetal und die Extras: Versionen, Anheften, „Alle einrichten“ und „Aufräumen“.
+- **Themen.** Neun optionale Farbthemen, etwa Catppuccin, Tokyo Night und Dracula. Standardmäßig bleibt der Look nativ.
+- **Deine Daten bleiben lokal.** Spielzeit und Einstellungen verlassen deinen Mac nie. Sichere deine Einstellungen oder exportiere die Spielzeit als CSV.
 - **Lastabschätzung.** Ein grüner, gelber oder roter Punkt neben jeder Einstellung zeigt, wie stark sie deinen Mac fordert.
 - **Alles verwaltet.** Installation, Updates, Reparatur und Sprachpakete von den offiziellen HoYoverse-Servern, dazu Wine, DXMT und D3DMetal. Downloads lassen sich pausieren.
 - **Hilfe & Leistung.** Probleme eines Spiels im Web suchen, bekannte Probleme lesen, Fehler mit Systeminfos melden und die Einstellungen prüfen, die die Geschwindigkeit beeinflussen.

@@ -37,6 +37,7 @@ struct FpsRiskSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.cancelAction)
                 Button {
                     confirm()

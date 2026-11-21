@@ -9,13 +9,12 @@ import SwiftUI
 
 /// Sheets that act on one game, opened from its footer.
 enum GameSheet: Identifiable, Hashable {
-    case install(String), voices(String), settings(String), setup(String), rosetta(String)
+    case install(String), voices(String), setup(String), rosetta(String)
 
     var id: String {
         switch self {
         case .install(let game): "install-\(game)"
         case .voices(let game): "voices-\(game)"
-        case .settings(let game): "settings-\(game)"
         case .setup(let game): "setup-\(game)"
         case .rosetta(let game): "rosetta-\(game)"
         }
@@ -74,7 +73,7 @@ struct GameFooter: View {
                             .contentTransition(.opacity)
                         if case .failed(let failure) = launch, failure.hasLog, model.sessionLogsEnabled {
                             Button("Open Log") { model.openLaunchLog(game.id) }
-                                .buttonStyle(.link)
+                                .buttonStyle(.mgQuiet)
                                 .underline()
                         }
                     }
@@ -400,6 +399,8 @@ struct PrimaryActionButton: View {
         case .play:
             prominent("Play", alwaysEnabled: true) { model.play(game.id) }
                 .disabled(playingElsewhere)
+                // ⌘↩ starts the game without reaching for the pointer; it exists only in this state.
+                .keyboardShortcut(.return, modifiers: .command)
         case .launching:
             launching
         case .playing:
@@ -611,19 +612,19 @@ struct GameMenu: View {
             if case .recoveryNeeded = model.launchState(for: game.id) {
                 Button("Try Restoring Again", systemImage: "arrow.clockwise") { model.retryRecovery(game.id) }
             }
-            if isInstalled {
-                Button("Game Settings…", systemImage: "slider.horizontal.3") { gameSheet = .settings(game.id) }
-            }
             if isInstalled, !waitingForApproval, !model.isGameOperationRunning, !isLive {
                 Button("Check for Updates", systemImage: "arrow.triangle.2.circlepath") { model.checkForGameUpdate(game.id) }
                     .disabled(model.gameUpdateCheck[game.id] == .checking)
                 Button("Verify Files", systemImage: "checkmark.shield") { model.verifyGame(game.id) }
                 Button("Voice Packs…", systemImage: "waveform") { gameSheet = .voices(game.id) }
             }
-            if let folder = model.gameRecord(game.id)?.installPath {
+            if isInstalled, let folder = model.gameRecord(game.id)?.installPath {
                 Button("Show in Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([folder])
                 }
+            }
+            Button("Show Logs", systemImage: "doc.text.magnifyingglass") {
+                NSWorkspace.shared.activateFileViewerSelecting([model.paths.logs])
             }
             Divider()
             if model.preDownloadState(for: game.id).canDelete {

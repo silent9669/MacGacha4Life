@@ -18,8 +18,10 @@ struct GPTKImportSheet: View {
                 .frame(minHeight: 160)
             HStack {
                 Button("Choose Folder…") { choosingFolder = true }
+                    .buttonStyle(.mgSecondary)
                 Spacer()
                 Button("Cancel", role: .cancel) { model.cancelImport() }
+                    .buttonStyle(.mgSecondary)
                     .keyboardShortcut(.cancelAction)
                 if case .choose(let candidates) = model.importState {
                     Button("Import") {
@@ -28,7 +30,7 @@ struct GPTKImportSheet: View {
                         }
                     }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.mgPrimary)
                 }
             }
         }
@@ -51,6 +53,7 @@ struct GPTKImportSheet: View {
                 Text("Open the Game Porting Toolkit disk image from Apple, then rescan, or choose the folder that contains it.")
             } actions: {
                 Button("Rescan") { model.rescanGPTK() }
+                    .buttonStyle(.mgSecondary)
                 Link("Get Game Porting Toolkit from Apple", destination: Self.gptkPage)
             }
         case .choose(let candidates):

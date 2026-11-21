@@ -30,29 +30,43 @@ struct LoadDot: View {
 /// The whole picture in one line: a three-step meter, its word and the first thing that drives it.
 struct LoadSummary: View {
     let estimate: PerformanceEstimate
+    var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        if compact {
+            HStack(spacing: 8) {
                 Text("Load on this Mac").font(.subheadline.weight(.semibold))
-                Spacer(minLength: 8)
+                meter
                 Text(estimate.level.title).font(.subheadline.weight(.semibold))
             }
-            HStack(spacing: 4) {
-                ForEach(LoadLevel.allCases, id: \.self) { step in
-                    Capsule()
-                        .fill(step <= estimate.level ? AnyShapeStyle(estimate.level.color.gradient) : AnyShapeStyle(.quaternary))
-                        .frame(height: 6)
+            .accessibilityElement(children: .combine)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Load on this Mac").font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Text(estimate.level.title).font(.subheadline.weight(.semibold))
+                }
+                meter
+                if let reason = estimate.reasons.first {
+                    Text(reason.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .accessibilityHidden(true)
-            if let reason = estimate.reasons.first {
-                Text(reason.text)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var meter: some View {
+        HStack(spacing: 4) {
+            ForEach(LoadLevel.allCases, id: \.self) { step in
+                Capsule()
+                    .fill(step <= estimate.level ? AnyShapeStyle(estimate.level.color.gradient) : AnyShapeStyle(.quaternary))
+                    .frame(height: 6)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityHidden(true)
     }
 }

@@ -179,3 +179,121 @@ struct PlayStatsTests {
         #expect(play.peakHour() == nil)
     }
 }
+
+extension PlayStatsTests {
+    @Test func weekTrendIncrease() {
+        let result = stats([session("genshin", -3, 10, 240)] + [-7, -8, -9].map { session("hsr", $0, 10, 60) }).weekTrend()
+        #expect(result != nil)
+        #expect(abs((result ?? 0) - ((14400 - 10800) / 10800.0)) < 0.001)
+    }
+
+    @Test func weekTrendDecrease() {
+        let result = stats([session("genshin", -3, 10, 60)] + [-8, -9].map { session("hsr", $0, 10, 120) }).weekTrend()
+        #expect(result != nil)
+        #expect(abs((result ?? 0) - ((3600 - 14400) / 14400.0)) < 0.001)
+    }
+
+    @Test func weekTrendNilWithoutBaseline() {
+        #expect(stats([session("genshin", -2, 10, 120)]).weekTrend() == nil)
+        #expect(stats([]).weekTrend() == nil)
+    }
+
+    private func sessionOn(_ game: String = "genshin", _ month: Int, _ day: Int, _ hour: Int, _ minutes: Int) -> PlaySession {
+        let start = calendar.date(from: DateComponents(year: 2025, month: month, day: day, hour: hour))!
+        return PlaySession(game: game, start: start, end: start.addingTimeInterval(TimeInterval(minutes * 60)))
+    }
+
+    @Test func periodTotalClipsSessionsToTheWindow() {
+        // Runs from 10 days ago to noon 6 days ago: a 7-day window keeps its last 12 h, a 5-day window none.
+        let long = PlaySession(game: "genshin", start: at(-10, 10), end: at(-6, 12))
+        #expect(stats([long]).total(days: 7) == 43_200)
+        #expect(stats([long]).total(days: 5) == 0)
+        #expect(stats([session("genshin", -2, 10, 90), session("hsr", -1, 20, 30)]).total(days: 7) == 7_200)
+        #expect(stats([session("hsr", -1, 20, 30)]).total(days: 7, game: "genshin") == 0)
+    }
+
+    @Test func periodAverageSessionCountsClippedSessionsOnly() {
+        #expect(stats([session("genshin", -2, 10, 90), session("hsr", -1, 20, 30)]).averageSession(days: 7) == 3_600)
+        // A session that leaves only 30 s inside the window doesn't count.
+        let thin = PlaySession(game: "genshin", start: at(-7, 22), end: at(-6, 0, 0).addingTimeInterval(30))
+        #expect(stats([thin]).averageSession(days: 7) == nil)
+        #expect(stats([thin]).averageSession(days: 8) == 7_230)
+    }
+
+    @Test func periodPeakHourStaysInsideTheWindow() {
+        let sessions = [session("genshin", -2, 10, 60), session("genshin", -1, 20, 30), session("genshin", -10, 5, 300)]
+        #expect(stats(sessions).peakHour(days: 7) == 10)
+        #expect(stats(sessions).peakHour(days: 14) == 5)
+        #expect(stats(sessions).peakHour(days: 7, game: "hsr") == nil)
+    }
+
+    @Test func monthTotalsShape() {
+        // June 2025 starts on a Sunday and has 30 days: no leading pad, five trailing pads (35 cells).
+        let june = calendar.date(from: DateComponents(year: 2025, month: 6, day: 10))!
+        let cells = stats([]).monthTotals(month: june)
+        #expect(cells.count == 35)
+        #expect(cells[0] != nil && cells[0]!.seconds == 0)
+        #expect(cells[29] != nil)
+        #expect(cells[30] == nil && cells[34] == nil)
+        // February 2025 (28 days, starts Saturday): six leading, one trailing pad.
+        let feb = stats([]).monthTotals(month: calendar.date(from: DateComponents(year: 2025, month: 2, day: 10))!)
+        #expect(feb.count == 35 && feb[0...5].allSatisfy { $0 == nil } && feb[6] != nil && feb[34] == nil)
+        // May 2025 (31 days, starts Thursday): four leading pads, no trailing pad.
+        let may = stats([]).monthTotals(month: calendar.date(from: DateComponents(year: 2025, month: 5, day: 10))!)
+        #expect(may.count == 35 && may[0...3].allSatisfy { $0 == nil } && may[34] != nil)
+        // February 2024 (leap, starts Thursday): 29 in-month cells.
+        var leap = calendar; leap.firstWeekday = 1
+        let feb24 = PlayStats(sessions: [], now: now, calendar: leap)
+            .monthTotals(month: calendar.date(from: DateComponents(year: 2024, month: 2, day: 10))!)
+        #expect(feb24.count == 35 && feb24.compactMap { $0 }.count == 29)
+    }
+
+    @Test func monthTotalsRespectFirstWeekday() {
+        // With Monday first, June 2025 needs six leading and six trailing pads (42 cells).
+        var monday = calendar
+        monday.firstWeekday = 2
+        let cells = PlayStats(sessions: [], now: now, calendar: monday)
+            .monthTotals(month: calendar.date(from: DateComponents(year: 2025, month: 6, day: 10))!)
+        #expect(cells.count == 42)
+        #expect(cells[0...5].allSatisfy { $0 == nil } && cells[6] != nil && cells[36] == nil && cells[41] == nil)
+    }
+
+    @Test func monthTotalsGameFilterAndMidnightSplit() {
+        // 22:00 June 10 to 02:00 June 11: two hours land on each day; the hsr filter drops them.
+        let split = PlaySession(game: "genshin",
+            start: calendar.date(from: DateComponents(year: 2025, month: 6, day: 10, hour: 22))!,
+            end: calendar.date(from: DateComponents(year: 2025, month: 6, day: 11, hour: 2))!)
+        let june = calendar.date(from: DateComponents(year: 2025, month: 6, day: 1))!
+        let cells = stats([split]).monthTotals(month: june)
+        #expect(cells[9]!.seconds == 7_200)
+        #expect(cells[10]!.seconds == 7_200)
+        #expect(stats([split]).monthTotals(month: june, game: "hsr").compactMap { $0 }.allSatisfy { $0.seconds == 0 })
+    }
+
+    @Test func monthCalendarWeeksChunksBySeven() {
+        // monthTotals always spans whole weeks, so every Grid row gets seven cells.
+        let june = calendar.date(from: DateComponents(year: 2025, month: 6, day: 10))!
+        let cells = stats([]).monthTotals(month: june)
+        let weeks = MonthCalendar.weeks(cells)
+        #expect(weeks.count == 5 && weeks.allSatisfy { $0.count == 7 })
+        #expect(weeks.flatMap { $0 } == cells)
+        // A short tail still yields a partial row, and empty input yields none.
+        #expect(MonthCalendar.weeks(Array(cells.prefix(9))).map(\.count) == [7, 2])
+        #expect(MonthCalendar.weeks([]).isEmpty)
+    }
+
+    @Test func weekTotalsCoversTheCurrentCalendarWeek() {
+        // now is Wednesday 2025-06-18, firstWeekday 1: the current week started Sunday 06-15.
+        let midweek = calendar.date(from: DateComponents(year: 2025, month: 6, day: 18, hour: 14, minute: 30))!
+        let cells = PlayStats(sessions: [
+            session("zzz", 0, 10, 90),   // Sunday, inside this week
+            session("zzz", -1, 10, 60),  // Saturday, last week — dropped
+            session("zzz", 3, 12, 30),   // Wednesday, ends before midweek
+        ], now: midweek, calendar: calendar).weekTotals(game: "zzz")
+        #expect(cells.count == 7)
+        #expect(cells.first?.day == at(0, 0))
+        #expect(cells.first?.seconds == 5_400 && cells[3].seconds == 1_800)
+        // Saturday's session belongs to last week and is not counted.
+        #expect(cells.reduce(0) { $0 + $1.seconds } == 7_200)
+    }
+}

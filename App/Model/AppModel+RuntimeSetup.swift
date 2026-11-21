@@ -118,6 +118,8 @@ enum RuntimeSetupItemState {
     }
 
     func cancelRuntimeSetup(for gameID: String) {
+        // Cancelling one game stops Set Up All: it never starts work the user did not ask for.
+        setUpAllQueue = []
         if catalogActivationTargets[gameID] != nil, let chain = runtimeSetupChains[gameID] {
             // Revoke intent now; the normal reducer releases the reservation
             // only after the installer task and its readers have drained.
@@ -153,6 +155,33 @@ enum RuntimeSetupItemState {
             guard let self else { return }
             self.runtimeSetupUpdateScheduled = false
             self.advanceRuntimeSetups()
+        }
+    }
+
+    /// True while at least one visible game still needs a recommended setup.
+    var canSetUpAll: Bool { visibleGames.contains { runtimeSetupPlan(for: $0.id) != nil } }
+
+    /// Queues every visible game with a plan and starts the first. A failure stops the queue.
+    func setUpAllRuntimes() {
+        setUpAllQueue = visibleGames.map(\.id).filter { runtimeSetupPlan(for: $0) != nil }
+        advanceSetUpAll()
+    }
+
+    /// Chained at the end of advanceRuntimeSetups: a finished chain frees the slot for the next game.
+    func advanceSetUpAll() {
+        while let next = setUpAllQueue.first {
+            if case .failed = runtimeSetupProgress[next] { setUpAllQueue = []; return }
+            if runtimeSetupPlan(for: next) == nil { setUpAllQueue.removeFirst(); continue }
+            guard runtimeSetupChains[next] == nil, runtimeSetupRosettaChecks[next] == nil else { return }
+            installRecommended(for: next)
+            if runtimeSetupChains[next] == nil, runtimeSetupRosettaChecks[next] == nil, runtimeSetupProgress[next] == nil {
+                // installRecommended defers while another operation finishes; nudge it until it takes.
+                Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    self?.advanceSetUpAll()
+                }
+            }
+            return
         }
     }
 
@@ -194,5 +223,6 @@ enum RuntimeSetupItemState {
                 break
             }
         }
+        advanceSetUpAll()
     }
 }

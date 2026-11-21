@@ -345,6 +345,41 @@ import Launch
         #expect(model.runtimeSetupPlan(for: "starrail")?.items.isEmpty == false)
     }
 
+    @Test func setUpAllQueuesGamesWithPlansAndStartsOne() async throws {
+        let (model, _, _) = try fixture("genshin")
+        model.setUpAllRuntimes()
+        let expected = model.visibleGames.map(\.id).filter { model.runtimeSetupPlan(for: $0) != nil }
+        #expect(!expected.isEmpty)
+        #expect(model.setUpAllQueue == expected)
+        // Exactly the first queued game owns work; the rest wait for the slot.
+        #expect(model.runtimeSetupChains.count + model.runtimeSetupRosettaChecks.count <= 1)
+        #expect(model.canSetUpAll)
+    }
+
+    @Test func setUpAllCancelStopsTheQueue() async throws {
+        let (model, fake, manifest) = try fixture("genshin")
+        let plan = try #require(model.runtimeSetupPlan(for: "genshin"))
+        model.setUpAllRuntimes()
+        #expect(model.setUpAllQueue.count > 1)
+        model.cancelRuntimeSetup(for: "genshin")
+        #expect(model.setUpAllQueue.isEmpty)
+        try complete(plan.items[0].id, fake: fake, manifest: manifest)
+        try await setupWait { model.runtimeSetupProgress.isEmpty }
+        // The queue stays empty: cancelling never starts the next game.
+        #expect(model.setUpAllQueue.isEmpty)
+    }
+
+    @Test func setUpAllCompletesFullyInstalledBeforeQueueing() async throws {
+        let (model, fake, manifest) = try fixture("genshin")
+        // Finish one game first so it cannot join the queue.
+        let plan = try #require(model.runtimeSetupPlan(for: "genshin"))
+        for item in plan.items { try publish(item.id, fake: fake, manifest: manifest) }
+        await model.refreshRuntimes()
+        model.setUpAllRuntimes()
+        #expect(!model.setUpAllQueue.contains("genshin"))
+        model.cancelRuntimeSetup(for: "genshin")
+    }
+
     private func fixture(_ game: String, backend: RuntimeBackend = .dxmt, patches: Bool = true) throws -> (AppModel, FakeRuntimeServices, RuntimeManifest) {
         let url = try #require(Bundle.main.url(forResource: "runtime-manifest", withExtension: "json"))
         let manifest = try RuntimeManifest.load(from: url), fake = FakeRuntimeServices()

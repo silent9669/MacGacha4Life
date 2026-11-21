@@ -43,6 +43,93 @@ struct PlayStats: Sendable {
         return result
     }
 
+    /// The last seven days against the seven before as a fraction, nil when the
+    /// earlier week has no play to compare against.
+    func weekTrend() -> Double? {
+        let totals = dailyTotals(days: 14)
+        let previous = totals.prefix(7).reduce(0) { $0 + $1.seconds }
+        guard previous > 0 else { return nil }
+        let current = totals.suffix(7).reduce(0) { $0 + $1.seconds }
+        return (current - previous) / previous
+    }
+
+    /// Total play seconds inside the last `days` days ending today.
+    func total(days: Int, game: String? = nil) -> TimeInterval {
+        dailyTotals(days: days, game: game).reduce(0) { $0 + $1.seconds }
+    }
+
+    /// Play seconds per day for the calendar week containing `now`, in `firstWeekday`
+    /// order — the Week half of the game page's playtime calendar.
+    func weekTotals(game: String? = nil) -> [DayTotal] {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: now) else { return [] }
+        let byDay = secondsByDay(sessions, game: game)
+        var result: [DayTotal] = []
+        var day = interval.start
+        while day < interval.end {
+            result.append(DayTotal(day: day, seconds: byDay[day] ?? 0))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return result
+    }
+
+    /// Matching sessions clipped to the last `days` days ending today.
+    private func clipped(days: Int, game: String?) -> [PlaySession] {
+        guard days > 0, let windowStart = calendar.date(byAdding: .day, value: -(days - 1),
+            to: calendar.startOfDay(for: now)) else { return [] }
+        return matching(sessions, game: game).compactMap { session in
+            let start = max(session.start, windowStart)
+            return session.end > start ? PlaySession(game: session.game, start: start, end: session.end) : nil
+        }
+    }
+
+    /// The mean counted session length inside the last `days` days, or nil when there is none.
+    func averageSession(days: Int, game: String? = nil) -> TimeInterval? {
+        let durations = clipped(days: days, game: game).map { $0.end.timeIntervalSince($0.start) }
+            .filter { $0 >= 60 }
+        guard !durations.isEmpty else { return nil }
+        return durations.reduce(0, +) / Double(durations.count)
+    }
+
+    /// Hour of day with the most play seconds inside the last `days` days.
+    func peakHour(days: Int, game: String? = nil) -> Int? {
+        var totals: [Int: TimeInterval] = [:]
+        for session in clipped(days: days, game: game) {
+            var cursor = session.start
+            while cursor < session.end {
+                guard let interval = calendar.dateInterval(of: .hour, for: cursor) else { break }
+                let sliceEnd = min(session.end, interval.end)
+                totals[calendar.component(.hour, from: cursor), default: 0] += sliceEnd.timeIntervalSince(cursor)
+                cursor = sliceEnd
+            }
+        }
+        guard !totals.isEmpty else { return nil }
+        // Strictly greater keeps the lowest hour on ties, so the answer is deterministic.
+        var best: (hour: Int, seconds: TimeInterval)?
+        for hour in 0..<24 where (totals[hour] ?? 0) > (best?.seconds ?? -1) {
+            best = (hour, totals[hour] ?? 0)
+        }
+        return best?.hour
+    }
+
+    /// The calendar month containing `month` as a week grid: leading and trailing nils pad the
+    /// first and last week to `calendar.firstWeekday`, so the result is a multiple of seven.
+    func monthTotals(month: Date, game: String? = nil) -> [DayTotal?] {
+        guard let interval = calendar.dateInterval(of: .month, for: month),
+            let firstWeek = calendar.dateInterval(of: .weekOfMonth, for: interval.start),
+            let lastDay = calendar.date(byAdding: .day, value: -1, to: interval.end),
+            let lastWeek = calendar.dateInterval(of: .weekOfMonth, for: lastDay) else { return [] }
+        let byDay = secondsByDay(sessions, game: game)
+        var result: [DayTotal?] = []
+        var day = firstWeek.start
+        while day < lastWeek.end {
+            result.append(day >= interval.start && day < interval.end ? DayTotal(day: day, seconds: byDay[day] ?? 0) : nil)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return result
+    }
+
     /// Total seconds per game over the last `days` days, largest first.
     func shares(days: Int) -> [(game: String, seconds: TimeInterval)] {
         guard days > 0, let windowStart = calendar.date(byAdding: .day, value: -(days - 1),
@@ -129,6 +216,9 @@ struct PlayStats: Sendable {
         }
         return best?.hour
     }
+
+    /// The earliest recorded session, for limiting how far back a calendar can page.
+    var earliestSession: Date? { sessions.map(\.start).min() }
 
     private func matching(_ source: [PlaySession], game: String?) -> [PlaySession] {
         guard let game else { return source }

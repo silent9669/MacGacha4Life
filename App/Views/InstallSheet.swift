@@ -51,6 +51,7 @@ struct InstallSheet: View {
                 Section {
                     LabeledContent {
                         Button("Change…") { pickMode = .location; picking = true }
+                        .buttonStyle(.mgSecondary)
                     } label: {
                         Text(displayPath)
                             .lineLimit(1)
@@ -118,6 +119,7 @@ struct InstallSheet: View {
         }
         .confirmationDialog("Install in parts?", isPresented: $confirmingParts) {
             Button("Install in Parts") { start(approved: true) }
+                .buttonStyle(.mgPrimary)
         } message: {
             Text("\(game.name) can't be played until the install finishes.")
         }
@@ -162,6 +164,7 @@ struct InstallSheet: View {
             if case .heldByMacOS(let bytes) = verdict {
                 PurgeableSpaceHint(bytes: bytes)
                 Button("Check Again") { attempt += 1 }
+                .buttonStyle(.mgSecondary)
             } else if verdict == .insufficient, let available = estimate.available {
                 Label("Free up \(ByteSize.text(estimate.diskMinimum - available)) more to install.",
                     systemImage: "exclamationmark.triangle.fill")
@@ -175,6 +178,7 @@ struct InstallSheet: View {
                     Label(reason, systemImage: "wifi.exclamationmark").foregroundStyle(.secondary)
                     Spacer()
                     Button("Try Again") { attempt += 1 }
+                    .buttonStyle(.mgSecondary)
                 }
             } else {
                 Text("Choose another location to see the size.").foregroundStyle(.secondary)
@@ -189,12 +193,14 @@ struct InstallSheet: View {
 
     private var existingButton: some View {
         Button("Use an Existing Installation…") { pickMode = .existing; picking = true }
+        .buttonStyle(.mgSecondary)
             .disabled(voices.isEmpty || blocked)
             .help("Choose a folder that already has \(game.name). MacGacha4Life checks it and downloads only what's missing.")
     }
 
     @ViewBuilder private var sheetButtons: some View {
         Button("Cancel", role: .cancel) { dismiss() }
+            .buttonStyle(.mgSecondary)
             .keyboardShortcut(.cancelAction)
         installButton
     }
@@ -202,10 +208,12 @@ struct InstallSheet: View {
     @ViewBuilder private var installButton: some View {
         if immediateVerdict == .batchedOnly {
             Button("Install in Parts…") { confirmingParts = true }
+                .buttonStyle(.mgPrimary)
                 .keyboardShortcut(.defaultAction)
                 .disabled(blocked)
         } else {
             Button("Install") { start(approved: false) }
+                .buttonStyle(.mgPrimary)
                 .keyboardShortcut(.defaultAction)
                 .disabled(immediateVerdict != .whole || blocked)
         }
