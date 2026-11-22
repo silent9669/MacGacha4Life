@@ -17,13 +17,15 @@ import TestSupport
         }
     }
 
-    @Test func controllerModeDefaultsToAutomaticAndToleratesUnknownValues() async throws {
-        #expect(GlobalLaunchSettings().controllerMode == .automatic)
+    @Test func controllerModeDefaultsToPlayStationAndToleratesOldOrUnknownValues() async throws {
+        #expect(GlobalLaunchSettings().controllerMode == .playStation)
         #expect(try JSONDecoder().decode(GlobalLaunchSettings.self,
-            from: Data(#"{"sessionLogsEnabled":false}"#.utf8)).controllerMode == .automatic)
+            from: Data(#"{"sessionLogsEnabled":false}"#.utf8)).controllerMode == .playStation)
         let unknown = try JSONDecoder().decode(GlobalLaunchSettings.self,
             from: Data(#"{"sessionLogsEnabled":false,"controllerMode":"nonsense"}"#.utf8))
-        #expect(unknown.controllerMode == .automatic)
+        #expect(try JSONDecoder().decode(GlobalLaunchSettings.self,
+            from: Data(#"{"controllerMode":"automatic"}"#.utf8)).controllerMode == .playStation)
+        #expect(unknown.controllerMode == .playStation)
         #expect(!unknown.sessionLogsEnabled)
         let roundTrip = try JSONDecoder().decode(GlobalLaunchSettings.self,
             from: JSONEncoder().encode(GlobalLaunchSettings(controllerMode: .xbox)))
