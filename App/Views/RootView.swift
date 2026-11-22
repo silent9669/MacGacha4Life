@@ -290,6 +290,7 @@ struct RootView: View {
         // A heartbeat every minute bounds how far a session orphaned by a quit or crash
         // can over-count when it's reconciled on the next launch.
         .modifier(SoundHapticsDriver(liveGames: liveGames))
+        .modifier(GamepadChrome(focus: gamepadFocus))
         .task(id: liveGames.isEmpty) {
             guard !liveGames.isEmpty else { return }
             while !Task.isCancelled {
