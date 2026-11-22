@@ -112,23 +112,37 @@ extension View {
 
 private struct GamepadTargetModifier: ViewModifier {
     @Environment(\.gamepadFocus) private var focus
+    @Environment(\.motionReduced) private var reduced
     let id: String
     let action: () -> Void
 
     func body(content: Content) -> some View {
         // Actions are not observed, so refreshing one here never invalidates a view.
         let _ = focus?.setAction(id, action)
+        let lifted = focus.map { $0.visible && $0.focused == id } ?? false
         content
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { focus?.register(id, frame: $0) }
             .onDisappear { focus?.unregister(id) }
+            // Like Apple's Games app: the focused control lifts toward you with a soft accent glow.
+            .scaleEffect(lifted && !reduced ? 1.06 : 1)
+            .background {
+                if lifted {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.18))
+                        .padding(-6)
+                }
+            }
             .overlay {
-                if let focus, focus.visible, focus.focused == id {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: 3)
-                        .padding(-4)
+                if lifted {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(.white.opacity(0.85), lineWidth: 2)
+                        .padding(-6)
                         .allowsHitTesting(false)
                 }
             }
+            .shadow(color: lifted ? Color.accentColor.opacity(0.45) : .clear, radius: lifted ? 14 : 0, y: lifted ? 6 : 0)
+            .zIndex(lifted ? 1 : 0)
+            .animation(reduced ? nil : .spring(duration: 0.28, bounce: 0.22), value: lifted)
     }
 }
 
@@ -154,30 +168,35 @@ private struct GamepadWindowReader: NSViewRepresentable {
 
 /// While a controller is connected: the highlight shows and a small legend sits bottom right.
 struct GamepadChrome: ViewModifier {
+    private func hint(_ label: Text, _ symbols: String...) -> some View {
+        HStack(spacing: 6) {
+            ForEach(symbols, id: \.self) { Image(systemName: $0).font(.title3).symbolRenderingMode(.hierarchical) }
+            label.font(.callout.weight(.medium)).lineLimit(1)
+        }
+        .fixedSize()
+        .foregroundStyle(.primary)
+    }
+
     @Environment(GamepadInput.self) private var gamepad
     let focus: GamepadFocus?
 
     func body(content: Content) -> some View {
         content
             .onChange(of: gamepad.controllerName, initial: true) { _, name in focus?.setVisible(name != nil) }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .bottom) {
                 if gamepad.controllerName != nil {
-                    HStack(spacing: 14) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "l1.rectangle.roundedbottom")
-                            Image(systemName: "r1.rectangle.roundedbottom")
-                        }
-                        Image(systemName: "dpad")
-                        Image(systemName: "xmark.circle")
-                        Label("Home", systemImage: "circle.circle")
+                    let glyphs = gamepad.glyphs
+                    HStack(spacing: 22) {
+                        hint(Text("Pages"), glyphs.previousPage, glyphs.nextPage)
+                        hint(Text("Select"), glyphs.confirm)
+                        hint(Text("Home"), glyphs.back)
                     }
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .padding(.horizontal, 20).padding(.vertical, 10)
                     .glassEffect(.regular, in: .capsule)
-                    .padding(16)
+                    .padding(.bottom, 18)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
     }
