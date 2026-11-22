@@ -289,6 +289,7 @@ struct RootView: View {
         }
         // A heartbeat every minute bounds how far a session orphaned by a quit or crash
         // can over-count when it's reconciled on the next launch.
+        .modifier(SoundHapticsDriver(liveGames: liveGames))
         .task(id: liveGames.isEmpty) {
             guard !liveGames.isEmpty else { return }
             while !Task.isCancelled {
@@ -575,5 +576,27 @@ enum QuitConfirmation {
         alert.addButton(withTitle: String(localized: "Quit"))
         alert.addButton(withTitle: String(localized: "Cancel"))
         completion(alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel)
+    }
+}
+
+/// A native DualSense gets no vibration from the game over Bluetooth, so while a game runs on the
+/// PlayStation setting its sound drives the pad. Retries every 3 s: the pad or the game's audio
+/// may appear after launch.
+private struct SoundHapticsDriver: ViewModifier {
+    @Environment(AppModel.self) private var model
+    let liveGames: Set<String>
+    @State private var haptics = SoundHaptics()
+
+    func body(content: Content) -> some View {
+        content.task(id: liveGames.sorted() + [model.controllerMode.rawValue]) {
+            defer { haptics.stop() }
+            guard model.controllerMode == .playStation, let id = liveGames.sorted().first else { return }
+            while !Task.isCancelled {
+                if !haptics.running {
+                    for pid in await model.gameProcessIDs(id) where haptics.start(pid: pid) { break }
+                }
+                do { try await ContinuousClock().sleep(for: .seconds(3)) } catch { return }
+            }
+        }
     }
 }
