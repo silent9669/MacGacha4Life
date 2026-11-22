@@ -851,7 +851,7 @@ import TestSupport
     @Test(arguments: [
         (ControllerMode.automatic, Set<PadTransport>([.bluetooth]), true),
         (ControllerMode.automatic, Set<PadTransport>([.usb]), false),
-        (ControllerMode.automatic, Set<PadTransport>(), false),
+        (ControllerMode.automatic, Set<PadTransport>(), true),
         (ControllerMode.xbox, Set<PadTransport>(), true),
         (ControllerMode.playStation, Set<PadTransport>([.bluetooth]), false),
     ])

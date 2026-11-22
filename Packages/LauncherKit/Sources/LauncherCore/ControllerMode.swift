@@ -9,11 +9,12 @@ public enum ControllerMode: String, Codable, CaseIterable, Sendable {
     case xbox
 
     /// The XInput-compatible route is what gives rumble (as an Xbox pad). Under
-    /// Automatic it is chosen only when a DualSense is connected over Bluetooth
-    /// at launch time; USB keeps the native pad.
+    /// Automatic the native pad is kept only when a DualSense is already on USB
+    /// at launch time (and none on Bluetooth); no pad yet also takes XInput so
+    /// a pad connected after the game starts still vibrates.
     public func usesXInputCompatibility(transports: Set<PadTransport>) -> Bool {
         switch self {
-        case .automatic: return transports.contains(.bluetooth)
+        case .automatic: return transports.isEmpty || transports.contains(.bluetooth)
         case .playStation: return false
         case .xbox: return true
         }

@@ -5,7 +5,7 @@ import Testing
 
 @Suite(.timeLimit(.minutes(1))) struct ControllerModeTests {
     @Test(arguments: [
-        (ControllerMode.automatic, Set<PadTransport>(), false),
+        (ControllerMode.automatic, Set<PadTransport>(), true),
         (.automatic, Set<PadTransport>([.usb]), false),
         (.automatic, Set<PadTransport>([.bluetooth]), true),
         (.automatic, Set<PadTransport>([.usb, .bluetooth]), true),
