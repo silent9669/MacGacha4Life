@@ -21,6 +21,7 @@
 - **Mỗi game một trang.** Ảnh nghệ thuật tràn viền và thanh thao tác kính phủ lên mọi cài đặt khởi chạy, cùng thời gian chơi theo tuần hoặc tháng và lịch các ngày bạn đã chơi, tất cả trong một cửa sổ.
 - **Thành phần phụ thuộc.** Một trang cho Wine, DXMT, D3DMetal và các tiện ích: phiên bản, ghim, Thiết lập tất cả và Dọn dẹp.
 - **Chủ đề.** Chín chủ đề màu tùy chọn như Catppuccin, Tokyo Night và Dracula. Giao diện mặc định vẫn giữ phong cách gốc.
+- **Tay cầm.** MG4L tự nhận tay cầm. L1/R1 chuyển trang, phím D-pad di chuyển vùng chọn, X/A để bấm và O/B để về Trang chủ.
 - **Dữ liệu ở lại máy bạn.** Thời gian chơi và cài đặt không bao giờ rời khỏi máy Mac. Sao lưu cài đặt hoặc xuất thời gian chơi ra CSV.
 - **Ước tính tải.** Chấm xanh, vàng hoặc đỏ cạnh mỗi cài đặt cho biết mức độ nặng với máy Mac của bạn.
 - **Được quản lý giúp bạn.** Cài đặt, cập nhật, sửa chữa và gói giọng nói từ máy chủ chính thức của HoYoverse, cùng Wine, DXMT và D3DMetal. Có thể tạm dừng và tiếp tục tải xuống.

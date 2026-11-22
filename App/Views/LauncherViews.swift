@@ -100,6 +100,7 @@ struct GameSidebar: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .gamepadTarget("rail-\(game.id)") { page = .game(game.id) }
                     .accessibilityLabel(game.name)
                     .help(Text(verbatim: help(for: game)))
                 }
@@ -156,6 +157,7 @@ struct GameSidebar: View {
             }
         }
         .buttonStyle(.plain)
+        .gamepadTarget("rail-home") { page = .home }
         .accessibilityLabel("Home")
         .help("Home")
     }
@@ -205,6 +207,7 @@ struct GameSidebar: View {
             }
         }
         .buttonStyle(.plain)
+        .gamepadTarget("rail-tool-\(symbol)") { page = target }
         .accessibilityLabel(title)
         .help(title)
     }

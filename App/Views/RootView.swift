@@ -23,6 +23,8 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(PlayTimeStore.self) private var playTime
     @Environment(\.appTheme) private var theme
+    @Environment(GamepadInput.self) private var gamepad
+    @Environment(\.gamepadFocus) private var gamepadFocus
     @SceneStorage("selectedGame") private var selectedID = LauncherGame.all[0].id
     @SceneStorage("page") private var savedPage = "home"
     @State private var page: Page = .home
@@ -275,7 +277,9 @@ struct RootView: View {
         .onChange(of: page, initial: true) { _, new in
             if case .game(let id) = new { selectedID = id }
         }
-        .onChange(of: page) { _, new in savedPage = Self.token(new) }
+        .onChange(of: page) { _, new in savedPage = Self.token(new); gamepadFocus?.reset() }
+        .gamepadWindow(gamepadFocus)
+        .task { gamepad.handler = { handleGamepad($0) } }
         // The launch state is only known once startup has reattached running games.
         .onChange(of: liveGames, initial: true) { _, live in
             if !model.isStarting { playTime.update(live: live) }
@@ -388,6 +392,25 @@ struct RootView: View {
         case .game: "game"
         case .tool(let tool): "tool:\(tool.rawValue)"
         }
+    }
+
+    /// L1/R1 step through the pages, Circle/B returns Home, the D-pad and Cross/A drive the highlight.
+    private func handleGamepad(_ button: GamepadButton) {
+        guard let focus = gamepadFocus, focus.accepts else { return }
+        switch button {
+        case .previousPage, .nextPage:
+            page = Self.adjacentPage(page, forward: button == .nextPage, games: model.visibleGames.map(\.id))
+        case .back: page = .home
+        case .confirm: focus.activate()
+        case .up, .down, .left, .right: focus.move(button)
+        }
+    }
+
+    /// Rail order: Home, the games, then the tool pages. Stops at both ends.
+    nonisolated static func adjacentPage(_ page: Page, forward: Bool, games: [String]) -> Page {
+        let order = [Page.home] + games.map { Page.game($0) } + [.tool(.dependencies), .tool(.support), .tool(.diagnostics)]
+        let index = order.firstIndex(of: page) ?? 0
+        return order[min(max(index + (forward ? 1 : -1), 0), order.count - 1)]
     }
 
     #if DEBUG

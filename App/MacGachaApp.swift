@@ -11,6 +11,8 @@ struct MacGachaApp: App {
     @State private var model = Self.makeModel()
     /// One store for the launcher window and Settings, so both see the same playtime.
     @State private var playTime = Self.makePlayTimeStore()
+    @State private var gamepad = GamepadInput()
+    @State private var gamepadFocus = GamepadFocus()
     @AppStorage("appTheme") private var appTheme = AppTheme.system.rawValue
     @NSApplicationDelegateAdaptor(LauncherAppDelegate.self) private var delegate
 
@@ -45,6 +47,8 @@ struct MacGachaApp: App {
             LauncherWindowContent()
                 .environment(model)
                 .environment(playTime)
+                .environment(gamepad)
+                .environment(\.gamepadFocus, gamepadFocus)
                 .appTheme(theme)
                 // Startup belongs to the window, not to the launcher view the loading screen replaces.
                 .task {

@@ -203,6 +203,7 @@ struct GameDetails: View {
                         Button("Check for Updates") { model.checkForGameUpdate(game.id) }
                             .buttonStyle(.mgSecondary)
                             .disabled(!canCheck)
+                            .gamepadTarget("check-updates") { if canCheck { model.checkForGameUpdate(game.id) } }
                             .lineLimit(1)
                             .fixedSize()
                     }
