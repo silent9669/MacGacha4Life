@@ -848,20 +848,13 @@ import TestSupport
         }
     }
 
-    @Test(arguments: [
-        (ControllerMode.automatic, Set<PadTransport>([.bluetooth]), true),
-        (ControllerMode.automatic, Set<PadTransport>([.usb]), false),
-        (ControllerMode.automatic, Set<PadTransport>(), true),
-        (ControllerMode.xbox, Set<PadTransport>(), true),
-        (ControllerMode.playStation, Set<PadTransport>([.bluetooth]), false),
-    ])
-    func controllerModeAndProbeSelectWineBusDeviceMode(mode: ControllerMode, transports: Set<PadTransport>,
-        expected: Bool) async throws {
+    @Test(arguments: [(ControllerMode.playStation, false), (ControllerMode.xbox, true)])
+    func controllerModeSelectsWineBusDeviceMode(mode: ControllerMode, expected: Bool) async throws {
         let f = try await ManagerFixture.make()
         try await BlockingIO.run {
             try GlobalLaunchSettingsStore(paths: f.paths).save(GlobalLaunchSettings(controllerMode: mode))
         }
-        let manager = f.manager(padProbe: FixedPadProbe(transports)), events = ManagerEvents()
+        let manager = f.manager(), events = ManagerEvents()
         let consumer = await f.consume(manager, events: events)
         await events.waitForRunning()
         #expect(f.preparation.lastRequest?.dualSenseAsXInput == expected)

@@ -152,11 +152,10 @@ struct SettingsView: View {
                     get: { model.controllerMode },
                     set: { model.controllerMode = $0 }
                 )) {
-                    Text("Automatic").tag(ControllerMode.automatic)
                     Text(verbatim: ControllerMode.playStation.optionTitle).tag(ControllerMode.playStation)
                     Text(verbatim: ControllerMode.xbox.optionTitle).tag(ControllerMode.xbox)
                 } label: {
-                    Text(verbatim: ControllerMode.rowLabel)
+                    Text("Controller")
                 }
             }
             Section {
@@ -305,14 +304,12 @@ private struct LanguageRestartRow: View {
     }
 }
 
-/// Proper nouns stay untranslated; "Automatic" is the row's only localized string.
+/// Proper nouns stay untranslated.
 private extension ControllerMode {
-    static let rowLabel = "DualSense"
     var optionTitle: String {
         switch self {
-        case .automatic: return String(localized: "Automatic")
-        case .playStation: return "PlayStation"
-        case .xbox: return "Xbox"
+        case .playStation: "PlayStation"
+        case .xbox: "Xbox"
         }
     }
 }

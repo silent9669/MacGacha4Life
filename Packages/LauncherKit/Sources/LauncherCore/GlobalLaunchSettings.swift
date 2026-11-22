@@ -9,7 +9,7 @@ public struct GlobalLaunchSettings: Codable, Equatable, Sendable {
     public var genshinFpsRiskAcknowledged: Bool
     public var controllerMode: ControllerMode
     public init(sessionLogsEnabled: Bool = true, gameModeEnabled: Bool = true, genshinFpsRiskAcknowledged: Bool = false,
-        controllerMode: ControllerMode = .automatic) {
+        controllerMode: ControllerMode = .playStation) {
         self.sessionLogsEnabled = sessionLogsEnabled; self.gameModeEnabled = gameModeEnabled
         self.genshinFpsRiskAcknowledged = genshinFpsRiskAcknowledged
         self.controllerMode = controllerMode
@@ -22,7 +22,7 @@ public struct GlobalLaunchSettings: Codable, Equatable, Sendable {
         genshinFpsRiskAcknowledged = try values.decodeIfPresent(Bool.self, forKey: .genshinFpsRiskAcknowledged) ?? false
         // Missing or unrecognised values fall back to automatic rather than
         // invalidating the whole settings file.
-        controllerMode = (try? values.decode(ControllerMode.self, forKey: .controllerMode)) ?? .automatic
+        controllerMode = (try? values.decode(ControllerMode.self, forKey: .controllerMode)) ?? .playStation
     }
 }
 
