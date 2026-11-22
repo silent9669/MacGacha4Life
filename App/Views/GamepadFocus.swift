@@ -14,22 +14,41 @@ import SwiftUI
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored private var frames: [String: CGRect] = [:]
     @ObservationIgnored private var actions: [String: () -> Void] = [:]
+    /// The highlight was placed automatically, so Play may still take it over.
+    @ObservationIgnored private var autoFocused = false
 
     var accepts: Bool {
         guard let window else { return false }
         return NSApp.keyWindow === window && window.attachedSheet == nil
     }
 
-    func register(_ id: String, frame: CGRect) { frames[id] = frame }
+    func register(_ id: String, frame: CGRect) {
+        frames[id] = frame
+        // With a controller connected something is always highlighted, Play first when it is there.
+        if visible, focused == nil || (id == "primary" && autoFocused) {
+            focused = Self.next(from: nil, direction: .down, in: frames); autoFocused = true
+        }
+    }
+
+    /// Shown while a controller is connected, hidden when it disconnects.
+    func setVisible(_ on: Bool) {
+        visible = on
+        if on, focused == nil { focused = Self.next(from: nil, direction: .down, in: frames); autoFocused = true }
+        if !on { focused = nil }
+    }
     func setAction(_ id: String, _ action: @escaping () -> Void) { actions[id] = action }
     func unregister(_ id: String) {
         frames[id] = nil; actions[id] = nil
         if focused == id { focused = nil }
     }
-    func reset() { focused = nil }
+    func reset() {
+        focused = Self.next(from: nil, direction: .down, in: frames.filter { $0.key.hasPrefix("rail-") ? false : true })
+        autoFocused = true
+        if !visible { focused = nil }
+    }
 
     func move(_ direction: GamepadButton) {
-        visible = true
+        visible = true; autoFocused = false
         guard let current = focused, frames[current] != nil else {
             focused = Self.next(from: nil, direction: direction, in: frames)
             return
@@ -39,7 +58,7 @@ import SwiftUI
 
     /// The first press with nothing highlighted only highlights, so a stray press never acts.
     func activate() {
-        visible = true
+        visible = true; autoFocused = false
         guard let current = focused, frames[current] != nil else {
             focused = Self.next(from: nil, direction: .down, in: frames)
             return
@@ -130,5 +149,36 @@ private struct GamepadWindowReader: NSViewRepresentable {
             super.viewDidMoveToWindow()
             onWindow?(window)
         }
+    }
+}
+
+/// While a controller is connected: the highlight shows and a small legend sits bottom right.
+struct GamepadChrome: ViewModifier {
+    @Environment(GamepadInput.self) private var gamepad
+    let focus: GamepadFocus?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: gamepad.controllerName, initial: true) { _, name in focus?.setVisible(name != nil) }
+            .overlay(alignment: .bottomTrailing) {
+                if gamepad.controllerName != nil {
+                    HStack(spacing: 14) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "l1.rectangle.roundedbottom")
+                            Image(systemName: "r1.rectangle.roundedbottom")
+                        }
+                        Image(systemName: "dpad")
+                        Image(systemName: "xmark.circle")
+                        Label("Home", systemImage: "circle.circle")
+                    }
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(16)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
     }
 }
