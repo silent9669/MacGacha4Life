@@ -5,6 +5,8 @@
 	<!-- Ad-hoc builds have no Team ID, so library validation rejects the
 	     embedded Sparkle.framework. Drop this once builds are signed with a
 	     Developer ID, which gives the app and its frameworks one Team ID. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 </dict>

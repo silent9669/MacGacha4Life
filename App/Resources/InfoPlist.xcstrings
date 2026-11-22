@@ -90,6 +90,96 @@
           }
         }
       }
+    },
+    "NSAudioCaptureUsageDescription": {
+      "comment": "The app's name in the menu bar. Not translated.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L listens to the game's sound to vibrate your DualSense."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L 会聆听游戏声音，让你的 DualSense 震动。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L 會聆聽遊戲聲音，讓你的 DualSense 震動。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L はゲームの音を聞いて DualSense を振動させます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L은 게임 소리를 듣고 DualSense를 진동시킵니다."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L слушает звук игры, чтобы DualSense вибрировал."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L слухає звук гри, щоб DualSense вібрував."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L hört auf den Spielton, damit dein DualSense vibriert."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L écoute le son du jeu pour faire vibrer votre DualSense."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L escucha el sonido del juego para que tu DualSense vibre."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O MG4L ouve o som do jogo para fazer seu DualSense vibrar."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L mendengarkan suara game untuk menggetarkan DualSense Anda."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L ฟังเสียงของเกมเพื่อให้ DualSense ของคุณสั่น"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MG4L nghe âm thanh của game để làm DualSense của bạn rung."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

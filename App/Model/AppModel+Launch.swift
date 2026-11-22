@@ -226,6 +226,9 @@ import RuntimeManager
         guard liveLaunchGames.contains(id), launchStates[id] == .running else { return }
         launchStates[id] = .ready
     }
+    /// The running game's process IDs, for following its sound.
+    func gameProcessIDs(_ id: String) async -> [Int32] { await launchServices.gameProcessIDs(id) }
+
     var liveSessionGameName: String? {
         guard let id = liveLaunchGames.sorted().first else { return nil }
         return LauncherGame.all.first { $0.id == id }?.name
