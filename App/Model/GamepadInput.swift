@@ -8,12 +8,22 @@ enum GamepadButton: Equatable, Sendable {
     case up, down, left, right, confirm, back, previousPage, nextPage
 }
 
+/// The connected pad's own button symbols (Cross/Circle on a DualSense, A/B on Xbox), as
+/// GameController names them, so the legend matches the controller in hand.
+struct GamepadGlyphs: Equatable, Sendable {
+    var confirm = "a.circle"
+    var back = "b.circle"
+    var previousPage = "l1.rectangle.roundedbottom"
+    var nextPage = "r1.rectangle.roundedbottom"
+}
+
 /// Finds game controllers (DualSense, Xbox and other pads macOS supports) as they connect and
 /// forwards their presses to `handler`. GameController delivers input only while MG4L is the
 /// frontmost app, so a running game keeps its pad to itself.
 @MainActor @Observable final class GamepadInput {
     /// The connected controller's name, nil when none is connected.
     private(set) var controllerName: String?
+    private(set) var glyphs = GamepadGlyphs()
     @ObservationIgnored var handler: ((GamepadButton) -> Void)?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
@@ -30,6 +40,13 @@ enum GamepadButton: Equatable, Sendable {
         let controllers = GCController.controllers().filter { $0.extendedGamepad != nil }
         for controller in controllers { if let pad = controller.extendedGamepad { attach(pad) } }
         controllerName = controllers.first?.vendorName
+        if let pad = controllers.first?.extendedGamepad {
+            let fallback = GamepadGlyphs()
+            glyphs = GamepadGlyphs(confirm: pad.buttonA.sfSymbolsName ?? fallback.confirm,
+                back: pad.buttonB.sfSymbolsName ?? fallback.back,
+                previousPage: pad.leftShoulder.sfSymbolsName ?? fallback.previousPage,
+                nextPage: pad.rightShoulder.sfSymbolsName ?? fallback.nextPage)
+        }
     }
 
     private func attach(_ pad: GCExtendedGamepad) {
