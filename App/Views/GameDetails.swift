@@ -270,11 +270,8 @@ private struct PlaytimeSection: View {
                     .font(.callout.weight(.semibold))
             }
             PanelContent {
-                if range == "month" {
-                    MonthCalendar(stats: stats, game: game.id, cellHeight: compact ? 18 : 20)
-                } else {
-                    WeekCalendar(stats: stats, game: game.id, cellHeight: compact ? 18 : 20)
-                }
+                DailyBars(stats: stats, games: [game], days: days)
+                    .frame(height: compact ? 118 : 136)
             }
             PanelRow {
                 Text("Last played")

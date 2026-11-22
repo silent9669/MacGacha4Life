@@ -123,26 +123,22 @@ private struct GamepadTargetModifier: ViewModifier {
         content
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { focus?.register(id, frame: $0) }
             .onDisappear { focus?.unregister(id) }
-            // Like Apple's Games app: the focused control lifts toward you with a soft accent glow.
-            .scaleEffect(lifted && !reduced ? 1.06 : 1)
+            // Like Apple's Games app: the focused control lifts, brightens and casts a soft shadow
+            // over a pill-shaped glow that follows its own size; no outline.
             .background {
                 if lifted {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.18))
-                        .padding(-6)
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: min(geo.size.height / 2, 12), style: .continuous)
+                            .fill(.white.opacity(0.16))
+                            .padding(-5)
+                    }
                 }
             }
-            .overlay {
-                if lifted {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(.white.opacity(0.85), lineWidth: 2)
-                        .padding(-6)
-                        .allowsHitTesting(false)
-                }
-            }
-            .shadow(color: lifted ? Color.accentColor.opacity(0.45) : .clear, radius: lifted ? 14 : 0, y: lifted ? 6 : 0)
+            .scaleEffect(lifted && !reduced ? 1.04 : 1)
+            .brightness(lifted ? 0.06 : 0)
+            .shadow(color: .black.opacity(lifted ? 0.35 : 0), radius: lifted ? 10 : 0, y: lifted ? 5 : 0)
             .zIndex(lifted ? 1 : 0)
-            .animation(reduced ? nil : .spring(duration: 0.28, bounce: 0.22), value: lifted)
+            .animation(reduced ? nil : .easeOut(duration: 0.12), value: lifted)
     }
 }
 
@@ -170,11 +166,11 @@ private struct GamepadWindowReader: NSViewRepresentable {
 struct GamepadChrome: ViewModifier {
     private func hint(_ label: Text, _ symbols: String...) -> some View {
         HStack(spacing: 6) {
-            ForEach(symbols, id: \.self) { Image(systemName: $0).font(.title3).symbolRenderingMode(.hierarchical) }
-            label.font(.callout.weight(.medium)).lineLimit(1)
+            ForEach(symbols, id: \.self) { Image(systemName: $0).font(.title2).symbolRenderingMode(.hierarchical) }
+            label.font(.body.weight(.semibold)).lineLimit(1)
         }
         .fixedSize()
-        .foregroundStyle(.primary)
+        .foregroundStyle(.white)
     }
 
     @Environment(GamepadInput.self) private var gamepad
@@ -187,11 +183,13 @@ struct GamepadChrome: ViewModifier {
                 if gamepad.controllerName != nil {
                     let glyphs = gamepad.glyphs
                     HStack(spacing: 22) {
+                        hint(Text("Move"), "dpad")
                         hint(Text("Pages"), glyphs.previousPage, glyphs.nextPage)
                         hint(Text("Select"), glyphs.confirm)
                         hint(Text("Home"), glyphs.back)
                     }
-                    .padding(.horizontal, 20).padding(.vertical, 10)
+                    .padding(.horizontal, 24).padding(.vertical, 12)
+                    .background(.black.opacity(0.45), in: .capsule)
                     .glassEffect(.regular, in: .capsule)
                     .padding(.bottom, 18)
                     .allowsHitTesting(false)

@@ -244,39 +244,6 @@ struct MonthCalendar: View {
     private var compact: Bool { cellHeight <= 20 }
 }
 
-/// The seven days of the current calendar week — the Week half of the game page's playtime
-/// section. Same cell styling as the month grid, no paging.
-struct WeekCalendar: View {
-    let stats: PlayStats
-    var game: String?
-    var cellHeight: CGFloat = 20
-    @Environment(\.calendar) private var calendar
-    @Environment(\.motionReduced) private var reduced
-    @State private var revealed = false
-
-    var body: some View {
-        let cells = stats.weekTotals(game: game)
-        let peak = max(cells.map(\.seconds).max() ?? 0, 1)
-        Grid(horizontalSpacing: 3, verticalSpacing: 3) {
-            GridRow {
-                ForEach(0..<7, id: \.self) { column in
-                    Text(verbatim: MonthCalendar.weekdayName(column, calendar: calendar))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            GridRow {
-                ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
-                    CalendarDayCell(day: cell, peak: peak, height: cellHeight,
-                        revealed: revealed, reduced: reduced, calendar: calendar)
-                }
-            }
-        }
-        .task { revealed = true }
-    }
-}
-
 /// One day cell shared by the month grid and the week row: accent-intensity fill like the
 /// heatmap, a ring on today, the same reveal and the same tooltip.
 private struct CalendarDayCell: View {

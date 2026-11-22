@@ -368,7 +368,7 @@ private struct HomeGameRow: View {
 /// The statistics column reads only the play log, so a running download's progress
 /// ticks never make it redraw.
 private struct StatsColumn: View {
-    @AppStorage("statsRange") private var statsRange = "weeks"
+    @AppStorage("statsRange") private var statsRange = "month"
     @Environment(PlayTimeStore.self) private var playTime
     @Environment(\.calendar) private var calendar
     let games: [LauncherGame]

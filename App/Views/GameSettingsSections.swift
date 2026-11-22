@@ -123,6 +123,8 @@ struct GameSettingsSections: View {
         } control: {
             Toggle(title, isOn: isOn)
                 .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
                 .disabled(disabled)
                 .gamepadTarget("setting-\(String(describing: title))") { if !disabled { isOn.wrappedValue.toggle() } }
         }
@@ -261,6 +263,8 @@ struct GameSettingsSections: View {
             } control: {
                 Toggle("Compatibility patches", isOn: settings.compatibilityPatches)
                     .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .gamepadTarget("setting-compatibility") { settings.compatibilityPatches.wrappedValue.toggle() }
             }
         }
