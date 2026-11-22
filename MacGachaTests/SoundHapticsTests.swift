@@ -13,6 +13,22 @@ struct SoundHapticsTests {
         #expect(middle > 0.45 && middle < 0.55)
     }
 
+    /// Regression for 0.6.6: Core Audio calls the IO block on its own queue; a block inheriting the
+    /// main actor trapped there. Running it on a background queue must not trap.
+    @Test func ioBlockRunsOffTheMainActor() {
+        let meter = LowFrequencyMeter(), block = SoundHaptics.ioBlock(meter)
+        var samples = [Float](repeating: 0.5, count: 960)
+        samples.withUnsafeMutableBytes { raw in
+            var list = AudioBufferList(mNumberBuffers: 1, mBuffers: AudioBuffer(mNumberChannels: 2,
+                mDataByteSize: UInt32(raw.count), mData: raw.baseAddress))
+            var time = AudioTimeStamp()
+            nonisolated(unsafe) let input = UnsafePointer(withUnsafeMutablePointer(to: &list) { $0 })
+            nonisolated(unsafe) let stamp = UnsafePointer(withUnsafeMutablePointer(to: &time) { $0 })
+            DispatchQueue(label: "test.audio").sync { block(stamp, input, stamp, UnsafeMutablePointer(mutating: input), stamp) }
+        }
+        #expect(meter.take() > 0)
+    }
+
     @Test func meterFollowsBassAndIgnoresHighPitch() {
         func peak(frequency: Double) -> Float {
             let meter = LowFrequencyMeter(), frames = 4800

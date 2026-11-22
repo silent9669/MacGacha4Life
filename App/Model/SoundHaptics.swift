@@ -18,6 +18,7 @@ import os
     private var engine: CHHapticEngine?
     private var timer: Timer?
     private var level: Float = 0
+    private var consecutiveErrors = 0
     private let meter = LowFrequencyMeter()
     private(set) var pid: pid_t?
     /// Why the last `start` failed, path-free, for the session log.
@@ -55,7 +56,7 @@ import os
         if aggregate != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggregate) }
         if tap != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tap) }
         aggregate = AudioObjectID(kAudioObjectUnknown); tap = AudioObjectID(kAudioObjectUnknown)
-        level = 0; pid = nil; failure = nil
+        level = 0; pid = nil; failure = nil; consecutiveErrors = 0
     }
 
     private func startEngine(_ engine: CHHapticEngine) -> String? {
@@ -86,10 +87,8 @@ import os
         ]
         let aggregateStatus = AudioHardwareCreateAggregateDevice(settings as CFDictionary, &aggregate)
         guard aggregateStatus == noErr else { return "aggregate refused (\(aggregateStatus))" }
-        let meter = meter
-        let status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, DispatchQueue(label: "mg4l.sound-haptics")) { _, data, _, _, _ in
-            meter.consume(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: data)))
-        }
+        let status = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, DispatchQueue(label: "mg4l.sound-haptics"),
+            Self.ioBlock(meter))
         guard status == noErr, let ioProc else { return "io proc refused (\(status))" }
         let started = AudioDeviceStart(aggregate, ioProc)
         return started == noErr ? nil : "device start refused (\(started))"
@@ -97,6 +96,12 @@ import os
 
     /// One pulse per tick, a little longer than the tick so pulses overlap into a steady rumble.
     private static let tick = 0.05
+
+    /// Built outside the main actor: Core Audio calls it on its own queue, and a block formed in a
+    /// main-actor method would inherit that isolation and trap there.
+    nonisolated static func ioBlock(_ meter: LowFrequencyMeter) -> AudioDeviceIOBlock {
+        { _, data, _, _, _ in meter.consume(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: data))) }
+    }
 
     private func update() {
         let rms = meter.take()
@@ -110,8 +115,12 @@ import os
             CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.25)], relativeTime: 0, duration: Self.tick + 0.02)
         do {
             try engine.makePlayer(with: CHHapticPattern(events: [event], parameters: [])).start(atTime: CHHapticTimeImmediate)
-            stats.pulses += 1
-        } catch { stats.errors += 1 }
+            stats.pulses += 1; consecutiveErrors = 0
+        } catch {
+            stats.errors += 1; consecutiveErrors += 1
+            // A disconnected pad or a reset haptics server: stop, so the driver starts over in 3 s.
+            if consecutiveErrors >= 20 { stop() }
+        }
     }
 }
 
