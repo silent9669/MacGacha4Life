@@ -59,6 +59,12 @@ struct GamepadNavigationTests {
         #expect(RootView.adjacentPage(.game("starrail"), forward: false, games: games) == .game("genshin"))
     }
 
+    @Test func glyphsFallBackToGenericButtons() {
+        let glyphs = GamepadGlyphs()
+        #expect(glyphs.confirm == "a.circle" && glyphs.back == "b.circle")
+        #expect(glyphs.previousPage == "l1.rectangle.roundedbottom" && glyphs.nextPage == "r1.rectangle.roundedbottom")
+    }
+
     @Test func controllerSymbolFollowsTheVendor() {
         #expect(StatChips.symbol(for: "DualSense Wireless Controller") == "logo.playstation")
         #expect(StatChips.symbol(for: "Xbox Wireless Controller") == "logo.xbox")
