@@ -7,6 +7,7 @@ import SwiftUI
 /// What the next launch will use, in the window toolbar. The settings themselves live on the page.
 struct StatChips: View {
     @Environment(AppModel.self) private var model
+    @Environment(GamepadInput.self) private var gamepad
     let game: LauncherGame
 
     private var installed: Bool {
@@ -26,10 +27,20 @@ struct StatChips: View {
                     else if let limit = settings.frameLimit { Text(limit, format: .number) } else { Text("Off") }
                 }
                 if model.gameModeEnabled { chip("gamecontroller.fill") { EmptyView() }.help("Game Mode for games") }
+                if let name = gamepad.controllerName { chip(Self.symbol(for: name)) { EmptyView() }.help(Text(verbatim: name)) }
                 if settings.metalHUD { chip("chart.xyaxis.line") { EmptyView() }.help("Performance overlay") }
             }
             .foregroundStyle(.secondary)
         }
+    }
+
+    /// Sony and Xbox pads get their logos; anything else the generic controller.
+    nonisolated static func symbol(for name: String) -> String {
+        let lower = name.lowercased()
+        // Xbox pads are also "Wireless Controller", so they are told apart first.
+        if lower.contains("xbox") { return "logo.xbox" }
+        if ["dualsense", "dualshock", "wireless controller"].contains(where: lower.contains) { return "logo.playstation" }
+        return "gamecontroller"
     }
 
     private func chip<V: View>(_ symbol: String, @ViewBuilder _ value: () -> V) -> some View {

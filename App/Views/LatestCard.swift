@@ -53,6 +53,7 @@ struct LatestCard: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .gamepadTarget("latest-\(title)") { if let link { NSWorkspace.shared.open(link) } }
         .disabled(link == nil)
         .onHover { hovering = $0 }
         .motionAnimation(.smooth(duration: 0.25), value: images.image(art) != nil)

@@ -23,6 +23,7 @@
 - **Eine Seite pro Spiel.** Randloses Artwork und eine gläserne Aktionsleiste über jeder Starteinstellung, dazu deine Spielzeit pro Woche oder Monat und ein Kalender der Tage, an denen du gespielt hast – alles in einem Fenster.
 - **Abhängigkeiten.** Eine Seite für Wine, DXMT, D3DMetal und die Extras: Versionen, Anheften, „Alle einrichten“ und „Aufräumen“.
 - **Themen.** Neun optionale Farbthemen, etwa Catppuccin, Tokyo Night und Dracula. Standardmäßig bleibt der Look nativ.
+- **Controller.** MG4L erkennt deinen Controller von selbst. L1/R1 wechseln die Seite, das Steuerkreuz bewegt die Markierung, Kreuz/A drückt sie und Kreis/B führt zurück zum Start.
 - **Deine Daten bleiben lokal.** Spielzeit und Einstellungen verlassen deinen Mac nie. Sichere deine Einstellungen oder exportiere die Spielzeit als CSV.
 - **Lastabschätzung.** Ein grüner, gelber oder roter Punkt neben jeder Einstellung zeigt, wie stark sie deinen Mac fordert.
 - **Alles verwaltet.** Installation, Updates, Reparatur und Sprachpakete von den offiziellen HoYoverse-Servern, dazu Wine, DXMT und D3DMetal. Downloads lassen sich pausieren.

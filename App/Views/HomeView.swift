@@ -294,6 +294,7 @@ private struct HomeGameRow: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .gamepadTarget("home-\(game.id)") { page = .game(game.id) }
             .accessibilityLabel(game.name)
             // Fixed columns keep the size and the action trailing-aligned across all rows.
             control
@@ -351,6 +352,7 @@ private struct HomeGameRow: View {
                 .controlSize(.small)
                 .themedProminent()
                 .disabled(playingElsewhere)
+                .gamepadTarget("home-play-\(game.id)") { if !playingElsewhere { model.play(game.id) } }
         case .progress:
             if case .working(_, let fraction?, _, _, _) = state.activity {
                 ProgressView(value: fraction).frame(width: 72)

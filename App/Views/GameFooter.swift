@@ -424,6 +424,7 @@ struct PrimaryActionButton: View {
         .font(.title3)
         .keyboardShortcut(.defaultAction)
         .disabled(blocked && !alwaysEnabled)
+        .gamepadTarget("primary") { if !blocked || alwaysEnabled { perform() } }
         .help(blocked && !alwaysEnabled ? Text("Wait for the other game's download to finish or pause it") : Text(verbatim: ""))
     }
 

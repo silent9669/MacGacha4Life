@@ -124,6 +124,7 @@ struct GameSettingsSections: View {
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .disabled(disabled)
+                .gamepadTarget("setting-\(String(describing: title))") { if !disabled { isOn.wrappedValue.toggle() } }
         }
     }
 
@@ -168,6 +169,9 @@ struct GameSettingsSections: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                .gamepadTarget("setting-graphics") {
+                    settings.backend.wrappedValue = settings.backend.wrappedValue == .d3dmetal ? .dxmt : .d3dmetal
+                }
             }
             PanelRow(height: 28) {
                 cell("Frame limit", PerformanceEstimate.level(frames: frames, mac: mac))
@@ -193,6 +197,11 @@ struct GameSettingsSections: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .fixedSize()
+                }
+                .gamepadTarget("setting-frame-limit") {
+                    let limits: [Int?] = [nil, 30, 60, 90, 120]
+                    let index = limits.firstIndex(of: settings.frameLimit.wrappedValue) ?? 0
+                    settings.frameLimit.wrappedValue = limits[(index + 1) % limits.count]
                 }
             }
             if model.offersGenshinFps(for: game.id), genshinFpsUnlock.wrappedValue {
@@ -252,6 +261,7 @@ struct GameSettingsSections: View {
             } control: {
                 Toggle("Compatibility patches", isOn: settings.compatibilityPatches)
                     .labelsHidden()
+                    .gamepadTarget("setting-compatibility") { settings.compatibilityPatches.wrappedValue.toggle() }
             }
         }
         // The only note the page keeps: HoYoverse may treat the FPS helper as third-party.
